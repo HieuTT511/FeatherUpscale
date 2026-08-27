@@ -13,7 +13,6 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
-import com.feather.upscale.TileProcessor
 import com.feather.upscale.worker.UpscaleState
 import com.feather.upscale.worker.UpscaleStateManager
 import com.feather.upscale.worker.UpscaleWorker
@@ -22,7 +21,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 
@@ -80,12 +80,14 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         UpscaleStateManager.reset()
 
         viewModelScope.launch(Dispatchers.IO) {
-            val name = queryFileName(uri) ?: "image_${System.currentTimeMillis()}.png"
-            _selectedFileName.value = name
+            try {
+                val name = queryFileName(uri) ?: "image_${System.currentTimeMillis()}.png"
+                _selectedFileName.value = name
 
-            appContext.contentResolver.openInputStream(uri)?.use { stream ->
-                val bmp = BitmapFactory.decodeStream(stream)
-                _beforeBitmap.value = bmp
+                // Load thumbnail an toàn cho Preview Slider (tránh OOM khi chọn ảnh khổng lồ 1GB)
+                _beforeBitmap.value = decodeSampledPreviewFromUri(uri, 1200)
+            } catch (e: Throwable) {
+                UpscaleStateManager.updateState(UpscaleState.Error("Không thể nạp ảnh xem trước: ${e.message}"))
             }
         }
     }
@@ -99,7 +101,6 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             val name = queryFileName(uri) ?: "comic_${System.currentTimeMillis()}.cbz"
             _selectedFileName.value = name
-            // Tạo ảnh demo placeholder cho batch
             _beforeBitmap.value = createMangaThumbnailPlaceholder()
         }
     }
@@ -109,29 +110,58 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         val isZip = _isBatchZip.value
 
         viewModelScope.launch(Dispatchers.IO) {
-            // Copy file từ URI sang cache file để Worker đọc an toàn
-            val cacheFile = File(appContext.cacheDir, if (isZip) "input_batch.cbz" else "input_image.png")
-            appContext.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(cacheFile).use { output -> input.copyTo(output) }
+            try {
+                UpscaleStateManager.updateState(
+                    UpscaleState.Processing(
+                        currentPage = 1,
+                        totalPages = 1,
+                        completedTiles = 0,
+                        totalTiles = 1,
+                        currentTileSize = if (_forceLowRam.value) 128 else 256,
+                        isLowRam = _forceLowRam.value,
+                        statusMessage = "Đang chuẩn bị file xử lý..."
+                    )
+                )
+
+                // Copy file từ URI vào cache file bằng buffer 64KB an toàn
+                val cacheFile = File(appContext.cacheDir, if (isZip) "input_batch.cbz" else "input_image.png")
+                appContext.contentResolver.openInputStream(uri)?.use { input ->
+                    BufferedInputStream(input).use { bis ->
+                        FileOutputStream(cacheFile).use { fos ->
+                            BufferedOutputStream(fos).use { bos ->
+                                val buffer = ByteArray(64 * 1024)
+                                var read = bis.read(buffer)
+                                while (read != -1) {
+                                    bos.write(buffer, 0, read)
+                                    read = bis.read(buffer)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                val inputData = workDataOf(
+                    UpscaleWorker.KEY_MODE to if (isZip) UpscaleWorker.MODE_BATCH_ARCHIVE else UpscaleWorker.MODE_SINGLE_IMAGE,
+                    UpscaleWorker.KEY_INPUT_PATH to cacheFile.absolutePath,
+                    UpscaleWorker.KEY_SCALE to _scale.value,
+                    UpscaleWorker.KEY_USE_FP16 to _useFp16.value,
+                    UpscaleWorker.KEY_FORCE_LOW_RAM to _forceLowRam.value
+                )
+
+                val workRequest = OneTimeWorkRequestBuilder<UpscaleWorker>()
+                    .setInputData(inputData)
+                    .build()
+
+                WorkManager.getInstance(appContext).enqueueUniqueWork(
+                    "FeatherUpscaleWork",
+                    ExistingWorkPolicy.REPLACE,
+                    workRequest
+                )
+            } catch (e: Throwable) {
+                UpscaleStateManager.updateState(
+                    UpscaleState.Error("Lỗi khởi tạo: ${e.localizedMessage ?: e.message}")
+                )
             }
-
-            val inputData = workDataOf(
-                UpscaleWorker.KEY_MODE to if (isZip) UpscaleWorker.MODE_BATCH_ARCHIVE else UpscaleWorker.MODE_SINGLE_IMAGE,
-                UpscaleWorker.KEY_INPUT_PATH to cacheFile.absolutePath,
-                UpscaleWorker.KEY_SCALE to _scale.value,
-                UpscaleWorker.KEY_USE_FP16 to _useFp16.value,
-                UpscaleWorker.KEY_FORCE_LOW_RAM to _forceLowRam.value
-            )
-
-            val workRequest = OneTimeWorkRequestBuilder<UpscaleWorker>()
-                .setInputData(inputData)
-                .build()
-
-            WorkManager.getInstance(appContext).enqueueUniqueWork(
-                "FeatherUpscaleWork",
-                ExistingWorkPolicy.REPLACE,
-                workRequest
-            )
         }
     }
 
@@ -166,6 +196,28 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         return name
     }
 
+    private fun decodeSampledPreviewFromUri(uri: Uri, maxDimension: Int): Bitmap? {
+        val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        appContext.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, boundsOptions)
+        }
+        if (boundsOptions.outWidth <= 0 || boundsOptions.outHeight <= 0) return null
+
+        val maxDim = maxOf(boundsOptions.outWidth, boundsOptions.outHeight)
+        var sampleSize = 1
+        while (maxDim / (sampleSize * 2) >= maxDimension) {
+            sampleSize *= 2
+        }
+
+        val decodeOptions = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        return appContext.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, decodeOptions)
+        }
+    }
+
     private fun createMangaThumbnailPlaceholder(): Bitmap {
         val bmp = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(bmp)
@@ -179,4 +231,3 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         return bmp
     }
 }
-

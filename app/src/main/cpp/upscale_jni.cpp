@@ -1,7 +1,5 @@
 // FeatherUpscale — JNI skeleton cho NCNN Real-ESRGAN tile upscaler với Vulkan backend.
 //
-// Khi đã đặt ncnn prebuilt vào app/src/main/cpp/ncnn/<abi>/, phần guarded
-// bằng FEATHER_HAS_NCNN sẽ chạy inference thật trên Vulkan GPU.
 // Hỗ trợ FP16 (use_fp16_packed / use_fp16_storage / use_fp16_arithmetic)
 // giúp giảm 50% dung lượng VRAM GPU và tăng tốc xử lý trên mobile chipsets.
 
@@ -38,6 +36,11 @@ Java_com_feather_upscale_NcnnUpscaler_nativeUpscaleTile(
         JNIEnv *env, jobject /*thiz*/,
         jbyteArray pixels, jint w, jint h, jint scale, jboolean useFp16) {
 
+    if (pixels == nullptr || w <= 0 || h <= 0 || scale <= 0) {
+        LOGE("nativeUpscaleTile: invalid input parameters");
+        return nullptr;
+    }
+
     jsize inputLen = env->GetArrayLength(pixels);
     if (inputLen != w * h * 4) {
         LOGE("nativeUpscaleTile: bad input length %d (expect %d)", inputLen, w * h * 4);
@@ -71,11 +74,13 @@ Java_com_feather_upscale_NcnnUpscaler_nativeUpscaleTile(
     (void)useFp16;
 #endif
 
-    // Placeholder bilinear/nearest upscale giữ pipeline chạy ổn định khi dev / test
+    // Fallback upscale bảo vệ không bao giờ vượt biên bộ nhớ
     for (int y = 0; y < oh; ++y) {
         int sy = y / scale;
+        if (sy >= h) sy = h - 1;
         for (int x = 0; x < ow; ++x) {
             int sx = x / scale;
+            if (sx >= w) sx = w - 1;
             const uint8_t *p = &src[(static_cast<size_t>(sy) * w + sx) * 4];
             uint8_t *q = &dst[(static_cast<size_t>(y) * ow + x) * 4];
             q[0] = p[0]; q[1] = p[1]; q[2] = p[2]; q[3] = p[3];

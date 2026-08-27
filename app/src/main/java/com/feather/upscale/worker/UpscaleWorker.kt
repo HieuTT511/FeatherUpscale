@@ -151,7 +151,7 @@ class UpscaleWorker(
             } else {
                 // Single Image Mode
                 val inputFile = File(inputPath)
-                val originalBitmap = BitmapFactory.decodeFile(inputPath)
+                val originalBitmap = decodeSafeBitmapFromFile(inputPath)
                     ?: return@withContext Result.failure(workDataOf("error" to "Không giải mã được ảnh $inputPath"))
 
                 val outputPath = inputData.getString(KEY_OUTPUT_PATH)
@@ -240,5 +240,22 @@ class UpscaleWorker(
             notificationManager.dismiss()
         }
     }
-}
 
+    private fun decodeSafeBitmapFromFile(path: String, maxDimension: Int = 4096): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        val maxDim = maxOf(bounds.outWidth, bounds.outHeight)
+        var sampleSize = 1
+        while (maxDim / sampleSize > maxDimension) {
+            sampleSize *= 2
+        }
+
+        val decodeOptions = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        return BitmapFactory.decodeFile(path, decodeOptions)
+    }
+}

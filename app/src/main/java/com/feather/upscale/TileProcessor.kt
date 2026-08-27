@@ -14,8 +14,8 @@ import kotlin.coroutines.cancellation.CancellationException
  * Chia Bitmap thành tiles (mặc định 256px, overlap 16px), upscale từng tile,
  * rồi ghép lại với linear feather blending tại vùng overlap.
  *
- * OOM guard cho máy 4GB RAM:
- * - isLowRamDevice -> tile size giảm còn 128.
+ * OOM guard cho máy 4GB RAM & file lớn (lên tới 1GB):
+ * - Giới hạn kích thước output tối đa an toàn (MAX_OUTPUT_DIMENSION = 4096px / 4K UHD) để tránh mảng IntArray 1.5GB tràn heap.
  * - Single-tile memory footprint: blend trực tiếp vào master buffer thay vì cache toàn bộ tiles.
  * - Check available memory trước mỗi tile.
  * - OutOfMemoryError -> tự retry với tile nhỏ hơn (128 -> 64).
@@ -49,6 +49,7 @@ class TileProcessor(
         const val LOW_RAM_TILE_SIZE = 128
         const val MIN_TILE_SIZE = 64
         const val OVERLAP = 16
+        const val MAX_OUTPUT_DIMENSION = 4096 // 4K UHD chuẩn an toàn tuyệt đối cho Android Canvas / GPU textures
         private const val MIN_FREE_BYTES_PER_TILE = 32L * 1024L * 1024L // ~32MB
 
         /**
@@ -167,24 +168,56 @@ class TileProcessor(
         isPaused: () -> Boolean = { false },
         isCancelled: () -> Boolean = { false },
     ): Bitmap = withContext(Dispatchers.Default) {
+        // Tối ưu kích thước đầu vào nếu kích thước đầu ra vượt quá 4K an toàn
+        val safeInputBitmap = prepareSafeBitmap(bitmap)
+        val shouldRecycleSafe = safeInputBitmap !== bitmap
+
         var currentTileSize = tileSize
-        while (true) {
-            try {
-                return@withContext processWithTileSize(
-                    bitmap, currentTileSize, onProgress, isPaused, isCancelled
-                )
-            } catch (e: OutOfMemoryError) {
-                if (currentTileSize > MIN_TILE_SIZE) {
-                    currentTileSize /= 2
-                    tileSize = currentTileSize
-                    System.gc()
-                } else {
-                    throw IllegalStateException("OOM khi upscale ảnh dù đã hạ tile size xuống $MIN_TILE_SIZE px", e)
+        try {
+            while (true) {
+                try {
+                    return@withContext processWithTileSize(
+                        safeInputBitmap, currentTileSize, onProgress, isPaused, isCancelled
+                    )
+                } catch (e: OutOfMemoryError) {
+                    if (currentTileSize > MIN_TILE_SIZE) {
+                        currentTileSize /= 2
+                        tileSize = currentTileSize
+                        System.gc()
+                    } else {
+                        throw IllegalStateException("OOM khi upscale ảnh dù đã hạ tile size xuống $MIN_TILE_SIZE px", e)
+                    }
                 }
             }
+            @Suppress("UNREACHABLE_CODE")
+            error("Unreachable")
+        } finally {
+            if (shouldRecycleSafe) {
+                safeInputBitmap.recycle()
+            }
         }
-        @Suppress("UNREACHABLE_CODE")
-        error("Unreachable")
+    }
+
+    /**
+     * Thu nhỏ nhẹ ảnh đầu vào nếu kích thước sau upscale vượt quá 4K (4096px)
+     * nhằm bảo vệ Java heap không bị tràn (max 64MB cho master IntArray).
+     */
+    private fun prepareSafeBitmap(input: Bitmap): Bitmap {
+        val targetOutW = input.width * scale
+        val targetOutH = input.height * scale
+        if (targetOutW <= MAX_OUTPUT_DIMENSION && targetOutH <= MAX_OUTPUT_DIMENSION) {
+            return input
+        }
+
+        val scaleRatio = minOf(
+            MAX_OUTPUT_DIMENSION.toFloat() / targetOutW,
+            MAX_OUTPUT_DIMENSION.toFloat() / targetOutH
+        )
+
+        val newW = (input.width * scaleRatio).toInt().coerceAtLeast(64)
+        val newH = (input.height * scaleRatio).toInt().coerceAtLeast(64)
+
+        return Bitmap.createScaledBitmap(input, newW, newH, true)
     }
 
     private suspend fun processWithTileSize(
