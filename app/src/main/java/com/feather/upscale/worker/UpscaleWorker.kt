@@ -1,0 +1,244 @@
+package com.feather.upscale.worker
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import androidx.work.workDataOf
+import com.feather.upscale.TileProcessor
+import com.feather.upscale.batch.BatchZipProcessor
+import com.feather.upscale.notification.UpscaleNotificationManager
+import com.feather.upscale.util.HapticHelper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import kotlin.coroutines.cancellation.CancellationException
+
+/**
+ * WorkManager CoroutineWorker chạy quá trình Upscale nền (Single Image / Batch ZIP).
+ *
+ * - Hỗ trợ Foreground Service với notification thanh tiến độ.
+ * - Tương tác hai chiều với [UpscaleStateManager] cho phép Pause / Resume / Cancel.
+ * - Tự động retry với tile size nhỏ hơn khi gặp áp lực RAM / OOM.
+ */
+class UpscaleWorker(
+    appContext: Context,
+    params: WorkerParameters,
+) : CoroutineWorker(appContext, params) {
+
+    companion object {
+        const val KEY_MODE = "key_mode"
+        const val MODE_SINGLE_IMAGE = "mode_single_image"
+        const val MODE_BATCH_ARCHIVE = "mode_batch_archive"
+
+        const val KEY_INPUT_PATH = "key_input_path"
+        const val KEY_OUTPUT_PATH = "key_output_path"
+        const val KEY_SCALE = "key_scale"
+        const val KEY_USE_FP16 = "key_use_fp16"
+        const val KEY_FORCE_LOW_RAM = "key_force_low_ram"
+
+        const val KEY_PROGRESS_PERCENT = "key_progress_percent"
+        const val KEY_RESULT_PATH = "key_result_path"
+    }
+
+    private val notificationManager = UpscaleNotificationManager(applicationContext)
+    private val hapticHelper = HapticHelper(applicationContext)
+
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        val mode = inputData.getString(KEY_MODE) ?: MODE_SINGLE_IMAGE
+        val inputPath = inputData.getString(KEY_INPUT_PATH)
+            ?: return@withContext Result.failure(workDataOf("error" to "Thiếu đường dẫn input"))
+        val scale = inputData.getInt(KEY_SCALE, 4)
+        val useFp16 = inputData.getBoolean(KEY_USE_FP16, true)
+        val forceLowRam = inputData.getBoolean(KEY_FORCE_LOW_RAM, false)
+
+        val startTime = System.currentTimeMillis()
+
+        try {
+            // Khởi động Foreground Notification
+            val initialForegroundInfo = notificationManager.createForegroundInfo(
+                pageIndex = 1,
+                totalPages = 1,
+                tileIndex = 0,
+                totalTiles = 1,
+                isPaused = false,
+                tileSize = if (forceLowRam) 128 else 256
+            )
+            setForeground(initialForegroundInfo)
+
+            val tileProcessor = TileProcessor(
+                context = applicationContext,
+                scale = scale,
+                forcedLowRam = forceLowRam,
+                useFp16 = useFp16
+            )
+
+            if (mode == MODE_BATCH_ARCHIVE) {
+                // Batch ZIP / CBZ mode
+                val inputFile = File(inputPath)
+                val outputPath = inputData.getString(KEY_OUTPUT_PATH)
+                    ?: File(inputFile.parentFile, "${inputFile.nameWithoutExtension}_upscaled_${scale}x.cbz").absolutePath
+                val outputFile = File(outputPath)
+
+                val batchProcessor = BatchZipProcessor(
+                    tileProcessor = tileProcessor,
+                    hapticHelper = hapticHelper
+                )
+
+                UpscaleStateManager.updateState(
+                    UpscaleState.Processing(
+                        currentPage = 1,
+                        totalPages = 1,
+                        completedTiles = 0,
+                        totalTiles = 1,
+                        currentTileSize = tileProcessor.tileSize,
+                        isLowRam = tileProcessor.isLowRam,
+                        statusMessage = "Đang quét các trang truyện..."
+                    )
+                )
+
+                batchProcessor.processArchive(
+                    inputFile = inputFile,
+                    outputFile = outputFile,
+                    onProgress = { progress ->
+                        val percent = if (progress.totalPages > 0) {
+                            val pageFraction = 1f / progress.totalPages
+                            val tileFraction = if (progress.totalTiles > 0) progress.currentTile.toFloat() / progress.totalTiles else 0f
+                            (progress.currentPage - 1) * pageFraction + tileFraction * pageFraction
+                        } else 0f
+
+                        UpscaleStateManager.updateState(
+                            UpscaleState.Processing(
+                                currentPage = progress.currentPage,
+                                totalPages = progress.totalPages,
+                                completedTiles = progress.currentTile,
+                                totalTiles = progress.totalTiles,
+                                currentTileSize = progress.currentTileSize,
+                                isLowRam = tileProcessor.isLowRam,
+                                progressFraction = percent,
+                                statusMessage = "Trang ${progress.currentPage}/${progress.totalPages} (${progress.pageName})"
+                            )
+                        )
+
+                        notificationManager.updateProgress(
+                            pageIndex = progress.currentPage,
+                            totalPages = progress.totalPages,
+                            tileIndex = progress.currentTile,
+                            totalTiles = progress.totalTiles,
+                            isPaused = UpscaleStateManager.isPaused.value,
+                            tileSize = progress.currentTileSize
+                        )
+
+                        setProgressAsync(workDataOf(KEY_PROGRESS_PERCENT to (percent * 100).toInt()))
+                    },
+                    isPaused = { isStopped || UpscaleStateManager.isPaused.value },
+                    isCancelled = { isStopped || UpscaleStateManager.isCancelled.value }
+                )
+
+                val duration = System.currentTimeMillis() - startTime
+                UpscaleStateManager.updateState(
+                    UpscaleState.Completed(
+                        totalPages = 1,
+                        totalDurationMs = duration,
+                        outputPath = outputFile.absolutePath
+                    )
+                )
+
+                return@withContext Result.success(workDataOf(KEY_RESULT_PATH to outputFile.absolutePath))
+
+            } else {
+                // Single Image Mode
+                val inputFile = File(inputPath)
+                val originalBitmap = BitmapFactory.decodeFile(inputPath)
+                    ?: return@withContext Result.failure(workDataOf("error" to "Không giải mã được ảnh $inputPath"))
+
+                val outputPath = inputData.getString(KEY_OUTPUT_PATH)
+                    ?: File(inputFile.parentFile, "${inputFile.nameWithoutExtension}_upscaled_${scale}x.png").absolutePath
+                val outputFile = File(outputPath)
+
+                UpscaleStateManager.updateState(
+                    UpscaleState.Processing(
+                        currentPage = 1,
+                        totalPages = 1,
+                        completedTiles = 0,
+                        totalTiles = 1,
+                        currentTileSize = tileProcessor.tileSize,
+                        isLowRam = tileProcessor.isLowRam,
+                        statusMessage = "Đang chia tile..."
+                    )
+                )
+
+                val upscaled = tileProcessor.process(
+                    bitmap = originalBitmap,
+                    onProgress = { currentTile, totalTiles ->
+                        val fraction = if (totalTiles > 0) currentTile.toFloat() / totalTiles else 0f
+                        UpscaleStateManager.updateState(
+                            UpscaleState.Processing(
+                                currentPage = 1,
+                                totalPages = 1,
+                                completedTiles = currentTile,
+                                totalTiles = totalTiles,
+                                currentTileSize = tileProcessor.tileSize,
+                                isLowRam = tileProcessor.isLowRam,
+                                progressFraction = fraction,
+                                statusMessage = "Tile $currentTile/$totalTiles (${(fraction * 100).toInt()}%)"
+                            )
+                        )
+                        notificationManager.updateProgress(
+                            pageIndex = 1,
+                            totalPages = 1,
+                            tileIndex = currentTile,
+                            totalTiles = totalTiles,
+                            isPaused = UpscaleStateManager.isPaused.value,
+                            tileSize = tileProcessor.tileSize
+                        )
+                        setProgressAsync(workDataOf(KEY_PROGRESS_PERCENT to (fraction * 100).toInt()))
+                    },
+                    isPaused = { isStopped || UpscaleStateManager.isPaused.value },
+                    isCancelled = { isStopped || UpscaleStateManager.isCancelled.value }
+                )
+
+                originalBitmap.recycle()
+
+                // Lưu ảnh đầu ra
+                FileOutputStream(outputFile).use { fos ->
+                    upscaled.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                }
+                upscaled.recycle()
+
+                hapticHelper.vibratePageComplete()
+
+                val duration = System.currentTimeMillis() - startTime
+                UpscaleStateManager.updateState(
+                    UpscaleState.Completed(
+                        totalPages = 1,
+                        totalDurationMs = duration,
+                        outputPath = outputFile.absolutePath
+                    )
+                )
+
+                return@withContext Result.success(workDataOf(KEY_RESULT_PATH to outputFile.absolutePath))
+            }
+
+        } catch (e: CancellationException) {
+            UpscaleStateManager.updateState(UpscaleState.Cancelled)
+            notificationManager.dismiss()
+            return@withContext Result.failure(workDataOf("error" to "Quá trình bị hủy"))
+        } catch (e: OutOfMemoryError) {
+            hapticHelper.vibrateError()
+            UpscaleStateManager.updateState(UpscaleState.Error("Thiếu bộ nhớ RAM (OOM). Hãy bật chế độ Low-RAM 128px.", isOom = true))
+            notificationManager.dismiss()
+            return@withContext Result.failure(workDataOf("error" to "OutOfMemoryError: ${e.message}"))
+        } catch (e: Throwable) {
+            hapticHelper.vibrateError()
+            UpscaleStateManager.updateState(UpscaleState.Error("Lỗi: ${e.localizedMessage ?: e.message}"))
+            notificationManager.dismiss()
+            return@withContext Result.failure(workDataOf("error" to (e.message ?: "Unknown error")))
+        } finally {
+            notificationManager.dismiss()
+        }
+    }
+}
+
