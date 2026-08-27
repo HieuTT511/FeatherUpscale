@@ -6,3 +6,4 @@
 4. Không được tự động xóa file thiết lập, cần review và có sự đồng ý của user khi xóa.
 5. Luôn build release signed apk file với R8 compiler (minify + shrink resources).
 6. Tạo git repo tự động rồi đẩy lên github account đang login vào VS code tự động (HieuTT511/FeatherUpscale hoặc HieuTT511/UpScale).
+

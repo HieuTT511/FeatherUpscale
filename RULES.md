@@ -51,3 +51,4 @@ Mỗi lần phát hành bản build mới, hệ thống tự động nhảy vers
 ## 📌 Quy Tắc 6: Tự Động Quản Lý Git & Đẩy Lên GitHub
 - Tự động tạo kho lưu trữ Git và đẩy lên tài khoản GitHub đang đăng nhập trên VS Code (`HieuTT511`).
 - Duy trì branch chính thức `main` luôn ở trạng thái mã nguồn sạch, build được và đã kiểm thử thành công.
+

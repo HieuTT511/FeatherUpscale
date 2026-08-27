@@ -19,7 +19,7 @@ android {
         vectorDrawables { useSupportLibrary = true }
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
         }
 
         externalNativeBuild {
@@ -39,8 +39,6 @@ android {
             storePassword = "feather123456"
             keyAlias = "featherup_release"
             keyPassword = "feather123456"
-            enableV1Signing = true
-            enableV2Signing = true
         }
     }
 

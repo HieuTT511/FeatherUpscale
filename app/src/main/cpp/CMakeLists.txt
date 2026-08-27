@@ -4,13 +4,15 @@ project(featherup LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Hỗ trợ 16KB memory page size alignment bắt buộc cho Android 15, 16, 17+
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
+
 # ---------------------------------------------------------------------------
 # NCNN prebuilt
-# Đặt bộ ncnn prebuilt (android arm64-v8a / x86_64) tại:
+# Đặt bộ ncnn prebuilt (android arm64-v8a / armeabi-v7a / x86_64 / x86) tại:
 #   app/src/main/cpp/ncnn/<abi>/lib/libncnn.a (hoặc .so)
 #   app/src/main/cpp/ncnn/<abi>/include/...
 # Download: https://github.com/Tencent/ncnn/releases
-# (vd: ncnn-<version>-android-vulkan.zip → giải nén và đổi tên thư mục per-ABI)
 # ---------------------------------------------------------------------------
 set(NCNN_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/ncnn/${ANDROID_ABI})
 if(EXISTS ${NCNN_ROOT})
