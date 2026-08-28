@@ -1206,33 +1206,31 @@ private fun openFile(context: Context, filePath: String?) {
  * Tiện ích mở thư mục chứa kết quả qua File Manager
  */
 private fun openFolder(context: Context, dirPath: String?, filePath: String?) {
-    if (filePath != null && filePath.startsWith("content://")) {
+    // 1. Thư mục Tree URI tùy chỉnh (content://...):
+    if (dirPath != null && dirPath.startsWith("content://")) {
         try {
-            val uri = Uri.parse(filePath)
+            val treeUri = Uri.parse(dirPath)
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "*/*")
+                setDataAndType(treeUri, "vnd.android.document/directory")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(Intent.createChooser(intent, "Mở tệp trong thư mục"))
+            context.startActivity(Intent.createChooser(intent, "Mở thư mục UpScale"))
             return
         } catch (_: Throwable) {}
     }
 
-    if (filePath != null) {
-        val file = File(filePath)
-        if (file.exists()) {
-            try {
-                val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", file)
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "resource/folder")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(Intent.createChooser(intent, "Mở thư mục UpScale"))
-                return
-            } catch (_: Throwable) {}
+    // 2. Mở trình quản lý thư viện / bộ sưu tập ảnh của thiết bị
+    try {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            val picturesUri = Uri.parse("content://media/external/images/media")
+            setDataAndType(picturesUri, "vnd.android.cursor.dir/image")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-    }
+        context.startActivity(Intent.createChooser(intent, "Mở thư mục ảnh UpScale"))
+        return
+    } catch (_: Throwable) {}
 
+    // 3. Fallback: Mở trực tiếp tệp kết quả bằng trình xem ảnh mặc định
     if (filePath != null) {
         openFile(context, filePath)
     }

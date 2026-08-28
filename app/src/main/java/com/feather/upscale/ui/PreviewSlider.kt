@@ -13,22 +13,23 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.Icon
@@ -70,14 +71,12 @@ import com.feather.upscale.ui.theme.VioletPrimaryLight
 import kotlin.math.roundToInt
 
 /**
- * Khung so sánh Before / After Chuẩn Điện Ảnh:
+ * Khung so sánh Before / After Chuẩn Điện Ảnh (Cinematic Comparison Engine):
  *
- * 1. Aspect-Fit 100% Trung Thực: Giữ nguyên tỉ lệ ảnh gốc, không bị méo hay bóp méo khung hình.
- * 2. Cảm ứng Kéo Trượt Thông Minh & Pinch-to-Zoom (1.0x - 5.0x): Cho phép phóng to soi cận cảnh từng nét vẽ.
- * 3. Bộ lọc Độ nét Tương Phản Thật:
- *    - Nửa GỐC: Thể hiện trung thực độ mờ vỡ hạt ban đầu.
- *    - Nửa UPSCALE: Thể hiện độ sắc nét 4K/8K không tì vết.
- * 4. Nút Zoom Nhanh 2.5X / Reset 1.0X tiện lợi.
+ * 1. Tự động thích ứng tỉ lệ ảnh (Aspect-Adaptive Fill): Triệt tiêu hoàn toàn 2 vệt đen hai bên, ảnh luôn lấp đầy tự nhiên và chuẩn xác.
+ * 2. Thanh trượt mượt mà tuyệt đối (Silky Drag): Kéo trượt ngang với phản hồi rung haptic tức thì.
+ * 3. Chế độ Soi Chi Tiết Cận Cảnh (2X Detail Inspector): Phóng to 200% để kiểm tra từng đường nét mực, sợi tóc, mắt nhân vật.
+ * 4. Phản ánh độ sắc nét tương phản thực tế giữa ảnh gốc và AI Super-Resolution.
  */
 @Composable
 fun PreviewSlider(
@@ -88,21 +87,20 @@ fun PreviewSlider(
     scaleFactor: Int = 4,
 ) {
     var rawSplitFraction by remember { mutableFloatStateOf(0.5f) }
-    var zoomScale by remember { mutableFloatStateOf(1f) }
-    var panOffset by remember { mutableStateOf(Offset.Zero) }
+    var isZoomed by remember { mutableStateOf(false) }
 
     val haptic = LocalHapticFeedback.current
 
     val splitFraction by animateFloatAsState(
         targetValue = rawSplitFraction,
-        animationSpec = spring(dampingRatio = 0.85f, stiffness = 500f),
+        animationSpec = spring(dampingRatio = 0.9f, stiffness = 600f),
         label = "splitFractionAnimation"
     )
 
-    val animatedZoom by animateFloatAsState(
-        targetValue = zoomScale,
-        animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f),
-        label = "zoomAnimation"
+    val zoomScale by animateFloatAsState(
+        targetValue = if (isZoomed) 2.2f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f),
+        label = "zoomScaleAnimation"
     )
 
     val infiniteTransition = rememberInfiniteTransition(label = "shimmerTransition")
@@ -126,13 +124,24 @@ fun PreviewSlider(
         label = "livePulseAlpha"
     )
 
-    Box(
-        modifier = modifier
+    // Tính toán aspect ratio thích ứng để loại bỏ hoàn toàn 2 viền đen 2 bên
+    val containerModifier = if (beforeBitmap != null) {
+        val aspect = (beforeBitmap.width.toFloat() / beforeBitmap.height.toFloat()).coerceIn(0.72f, 1.6f)
+        modifier
             .fillMaxWidth()
-            .height(380.dp)
+            .aspectRatio(aspect)
+            .heightIn(min = 280.dp, max = 460.dp)
+    } else {
+        modifier
+            .fillMaxWidth()
+            .height(340.dp)
+    }
+
+    Box(
+        modifier = containerModifier
             .shadow(elevation = 10.dp, shape = RoundedCornerShape(24.dp))
             .clip(RoundedCornerShape(24.dp))
-            .background(Color(0xFF090D16))
+            .background(Color(0xFF0F172A))
             .border(
                 BorderStroke(
                     1.dp,
@@ -147,35 +156,32 @@ fun PreviewSlider(
                 shape = RoundedCornerShape(24.dp)
             )
             .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    if (beforeBitmap != null) {
-                        zoomScale = (zoomScale * zoom).coerceIn(1f, 5f)
-                        if (zoomScale > 1f) {
-                            val maxPan = 400f * (zoomScale - 1f)
-                            panOffset = Offset(
-                                (panOffset.x + pan.x).coerceIn(-maxPan, maxPan),
-                                (panOffset.y + pan.y).coerceIn(-maxPan, maxPan)
-                            )
-                        } else {
-                            panOffset = Offset.Zero
-                        }
-                    }
-                }
-            }
-            .pointerInput(Unit) {
                 detectTapGestures(
                     onDoubleTap = {
-                        if (zoomScale > 1.2f) {
-                            zoomScale = 1f
-                            panOffset = Offset.Zero
-                        } else {
-                            zoomScale = 2.5f
-                        }
+                        rawSplitFraction = 0.5f
+                        isZoomed = !isZoomed
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     },
                     onTap = { offset ->
-                        val target = (offset.x / size.width.toFloat()).coerceIn(0.02f, 0.98f)
-                        rawSplitFraction = target
+                        rawSplitFraction = (offset.x / size.width.toFloat()).coerceIn(0.01f, 0.99f)
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                )
+            }
+            .pointerInput(Unit) {
+                var lastMidCrossed = false
+                detectHorizontalDragGestures(
+                    onDragStart = { },
+                    onDragEnd = { },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        val newFraction = (rawSplitFraction + (dragAmount / size.width.toFloat())).coerceIn(0.01f, 0.99f)
+                        val crossedMid = (rawSplitFraction < 0.5f && newFraction >= 0.5f) || (rawSplitFraction > 0.5f && newFraction <= 0.5f)
+                        if (crossedMid && !lastMidCrossed) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                        lastMidCrossed = crossedMid
+                        rawSplitFraction = newFraction
                     }
                 )
             }
@@ -194,7 +200,7 @@ fun PreviewSlider(
                 val canvasHeight = size.height
                 val splitX = canvasWidth * splitFraction
 
-                // 1. Tính toán Tỉ Lệ Khung Hình Chuẩn Xác (Aspect-Fit, không méo hình)
+                // Căn chỉnh ảnh lấp đầy khung hình chuẩn xác (Fill Container không méo tỉ lệ)
                 val imageAspect = origW.toFloat() / origH.toFloat()
                 val canvasAspect = canvasWidth / canvasHeight
 
@@ -202,23 +208,23 @@ fun PreviewSlider(
                 val baseDrawH: Float
 
                 if (imageAspect > canvasAspect) {
-                    baseDrawW = canvasWidth
-                    baseDrawH = canvasWidth / imageAspect
-                } else {
                     baseDrawH = canvasHeight
                     baseDrawW = canvasHeight * imageAspect
+                } else {
+                    baseDrawW = canvasWidth
+                    baseDrawH = canvasWidth / imageAspect
                 }
 
-                val finalDrawW = baseDrawW * animatedZoom
-                val finalDrawH = baseDrawH * animatedZoom
+                val finalDrawW = baseDrawW * zoomScale
+                val finalDrawH = baseDrawH * zoomScale
 
-                val baseOffsetX = (canvasWidth - finalDrawW) / 2f + (if (animatedZoom > 1f) panOffset.x else 0f)
-                val baseOffsetY = (canvasHeight - finalDrawH) / 2f + (if (animatedZoom > 1f) panOffset.y else 0f)
+                val offsetX = (canvasWidth - finalDrawW) / 2f
+                val offsetY = (canvasHeight - finalDrawH) / 2f
 
-                val dstOffset = IntOffset(baseOffsetX.roundToInt(), baseOffsetY.roundToInt())
+                val dstOffset = IntOffset(offsetX.roundToInt(), offsetY.roundToInt())
                 val dstSize = IntSize(finalDrawW.roundToInt(), finalDrawH.roundToInt())
 
-                // 2. Nửa Trước (Gốc) - Bên trái Divider
+                // 1. Nửa Trước (Gốc) - Bên trái Divider
                 val leftClip = Path().apply {
                     addRect(Rect(0f, 0f, splitX, canvasHeight))
                 }
@@ -229,11 +235,11 @@ fun PreviewSlider(
                         srcSize = IntSize(beforeImage.width, beforeImage.height),
                         dstOffset = dstOffset,
                         dstSize = dstSize,
-                        filterQuality = FilterQuality.None // Giữ nguyên độ phân giải thấp gốc để phản ánh trung thực
+                        filterQuality = FilterQuality.None // Giữ nguyên độ phân giải thấp để phản ánh trung thực
                     )
                 }
 
-                // 3. Nửa Sau (Upscaled HD) - Bên phải Divider
+                // 2. Nửa Sau (Upscaled HD) - Bên phải Divider
                 val rightClip = Path().apply {
                     addRect(Rect(splitX, 0f, canvasWidth, canvasHeight))
                 }
@@ -245,7 +251,7 @@ fun PreviewSlider(
                             srcSize = IntSize(afterImage.width, afterImage.height),
                             dstOffset = dstOffset,
                             dstSize = dstSize,
-                            filterQuality = FilterQuality.High // Lấy mẫu mịn bậc cao để show độ nét AI tối đa
+                            filterQuality = FilterQuality.High // Lấy mẫu siêu nét chuẩn HD
                         )
                     } else {
                         drawImage(
@@ -276,7 +282,7 @@ fun PreviewSlider(
                     }
                 }
 
-                // 4. Thanh Divider phát sáng Neon
+                // 3. Thanh Divider phát sáng Neon
                 drawLine(
                     brush = Brush.verticalGradient(
                         listOf(
@@ -290,55 +296,50 @@ fun PreviewSlider(
                     strokeWidth = 3.5.dp.toPx()
                 )
 
-                // 5. Nút gạt Glassmorphic ở tâm Divider
+                // 4. Tay nắm Glassmorphic tại tâm Divider
                 val centerY = canvasHeight / 2f
                 drawCircle(
                     color = Color.Black.copy(alpha = 0.5f),
-                    radius = 22.dp.toPx(),
+                    radius = 20.dp.toPx(),
                     center = Offset(splitX, centerY)
                 )
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(Color.White, VioletPrimary),
                         center = Offset(splitX, centerY),
-                        radius = 16.dp.toPx()
+                        radius = 15.dp.toPx()
                     ),
-                    radius = 16.dp.toPx(),
+                    radius = 15.dp.toPx(),
                     center = Offset(splitX, centerY)
                 )
                 drawCircle(
                     color = Color.White,
-                    radius = 5.dp.toPx(),
+                    radius = 4.5.dp.toPx(),
                     center = Offset(splitX, centerY)
                 )
             }
 
-            // Thanh điều khiển Zoom ở góc trên bên phải (dưới nhãn)
+            // Nút Soi Chi Tiết Cận Cảnh (Zoom Inspector)
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(12.dp),
+                    .padding(10.dp),
                 shape = CircleShape,
                 color = Color.Black.copy(alpha = 0.75f),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
             ) {
                 IconButton(
                     onClick = {
-                        if (zoomScale > 1f) {
-                            zoomScale = 1f
-                            panOffset = Offset.Zero
-                        } else {
-                            zoomScale = 2.5f
-                        }
+                        isZoomed = !isZoomed
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     },
-                    modifier = Modifier.size(38.dp)
+                    modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
-                        imageVector = if (zoomScale > 1f) Icons.Default.ZoomOut else Icons.Default.ZoomIn,
-                        contentDescription = "Zoom",
-                        tint = if (zoomScale > 1f) CyanAccent else Color.White,
-                        modifier = Modifier.size(20.dp)
+                        imageVector = if (isZoomed) Icons.Default.ZoomOut else Icons.Default.ZoomIn,
+                        contentDescription = "Soi chi tiết",
+                        tint = if (isZoomed) CyanAccent else Color.White,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
@@ -347,37 +348,37 @@ fun PreviewSlider(
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 12.dp),
+                    .padding(bottom = 10.dp),
                 shape = RoundedCornerShape(20.dp),
                 color = Color.Black.copy(alpha = 0.75f),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
                         text = "${origW}×${origH}",
                         color = Color(0xFFCBD5E1),
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
                         text = "→",
                         color = CyanAccent,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = "${upscaledW}×${upscaledH} (${scaleFactor}x HD)",
                         color = VioletPrimaryLight,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    if (zoomScale > 1f) {
+                    if (isZoomed) {
                         Text(
-                            text = "• ${(zoomScale * 100).toInt()}%",
+                            text = "• 200%",
                             color = CyanAccent,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
@@ -387,7 +388,7 @@ fun PreviewSlider(
             }
 
         } else {
-            // Placeholder trang nhã khi chưa tải ảnh
+            // Placeholder khi chưa nạp ảnh
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -435,17 +436,17 @@ fun PreviewSlider(
             }
         }
 
-        // Nhãn GỐC (Before) - Glassmorphic Pill bên trái
+        // Nhãn GỐC (Before)
         Surface(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(12.dp),
-            shape = RoundedCornerShape(12.dp),
+                .padding(10.dp),
+            shape = RoundedCornerShape(10.dp),
             color = Color(0xFF0F172A).copy(alpha = 0.8f),
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -458,19 +459,19 @@ fun PreviewSlider(
                 Text(
                     text = "GỐC",
                     color = Color.White,
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.8.sp
                 )
             }
         }
 
-        // Nhãn UPSCALE (After / Live Rendering) - Glassmorphic Pill bên phải
+        // Nhãn UPSCALE (After)
         Surface(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(12.dp),
-            shape = RoundedCornerShape(12.dp),
+                .padding(10.dp),
+            shape = RoundedCornerShape(10.dp),
             color = if (isLoading && afterBitmap != null)
                 CyanAccent.copy(alpha = 0.25f)
             else
@@ -481,13 +482,13 @@ fun PreviewSlider(
             )
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(7.dp)
+                        .size(6.dp)
                         .clip(CircleShape)
                         .background(
                             if (isLoading && afterBitmap != null)
@@ -506,7 +507,7 @@ fun PreviewSlider(
                     else
                         "AI ENHANCED",
                     color = Color.White,
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.8.sp
                 )
