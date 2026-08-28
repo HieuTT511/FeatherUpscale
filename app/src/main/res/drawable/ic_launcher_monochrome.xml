@@ -4,20 +4,22 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group
-        android:scaleX="0.65"
-        android:scaleY="0.65"
-        android:translateX="18.9"
-        android:translateY="18.9">
-        <path
-            android:fillColor="#000000"
-            android:pathData="M54,18 C54,37.88 37.88,54 18,54 C37.88,54 54,70.12 54,90 C54,70.12 70.12,54 90,54 C70.12,54 54,37.88 54,18 Z" />
-        <path
-            android:fillColor="#000000"
-            android:pathData="M78,20 C78,26.63 72.63,32 66,32 C72.63,32 78,37.37 78,44 C78,37.37 83.37,32 90,32 C83.37,32 78,26.63 78,20 Z" />
-        <path
-            android:fillColor="#000000"
-            android:pathData="M30,68 C30,73.52 25.52,78 20,78 C25.52,78 30,82.48 30,88 C30,82.48 34.48,78 40,78 C34.48,78 30,73.52 30,68 Z" />
-    </group>
+    <!-- Khung khiên đơn sắc -->
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="1.5"
+        android:fillColor="#00000000"
+        android:pathData="M54,22 L79,36 L79,72 L54,86 L29,72 L29,36 Z" />
+    <!-- Mũi tên AI siêu phân giải -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M54,28 L72,46 L60,46 L60,66 L48,66 L48,46 L36,46 Z" />
+    <!-- Sparkle góc trên -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M78,24 C78,28.4 74.4,32 70,32 C74.4,32 78,35.6 78,40 C78,35.6 81.6,32 86,32 C81.6,32 78,28.4 78,24 Z" />
+    <!-- Sparkle góc dưới -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M30,66 C30,69.3 27.3,72 24,72 C27.3,72 30,74.7 30,78 C30,74.7 32.7,72 36,72 C32.7,72 30,69.3 30,66 Z" />
 </vector>
-

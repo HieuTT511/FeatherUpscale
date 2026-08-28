@@ -1,26 +1,62 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group
-        android:scaleX="0.65"
-        android:scaleY="0.65"
-        android:translateX="18.9"
-        android:translateY="18.9">
-        <!-- Ngôi sao lấp lánh chính (AI Sparkle) -->
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M54,18 C54,37.88 37.88,54 18,54 C37.88,54 54,70.12 54,90 C54,70.12 70.12,54 90,54 C70.12,54 54,37.88 54,18 Z" />
-        <!-- Ngôi sao nhỏ góc trên (Mini Sparkle) -->
-        <path
-            android:fillColor="#67E8F9"
-            android:pathData="M78,20 C78,26.63 72.63,32 66,32 C72.63,32 78,37.37 78,44 C78,37.37 83.37,32 90,32 C83.37,32 78,26.63 78,20 Z" />
-        <!-- Ngôi sao nhỏ góc dưới (Mini Sparkle 2) -->
-        <path
-            android:fillColor="#F472B6"
-            android:pathData="M30,68 C30,73.52 25.52,78 20,78 C25.52,78 30,82.48 30,88 C30,82.48 34.48,78 40,78 C34.48,78 30,73.52 30,68 Z" />
-    </group>
-</vector>
 
+    <!-- Khối Khiên / Kim Cương 3D Glassmorphic Nền -->
+    <path
+        android:pathData="M54,22 L79,36 L79,72 L54,86 L29,72 L29,36 Z"
+        android:strokeWidth="1.5"
+        android:strokeColor="#40FFFFFF">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="29"
+                android:startY="22"
+                android:endX="79"
+                android:endY="86"
+                android:type="linear">
+                <item android:color="#338B5CF6" android:offset="0.0" />
+                <item android:color="#2006B6D4" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Mũi Tên Đột Phá AI 4X Siêu Phân Giải (Rising 4X Diamond Arrow) -->
+    <path android:pathData="M54,28 L72,46 L60,46 L60,66 L48,66 L48,46 L36,46 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="54"
+                android:startY="28"
+                android:endX="54"
+                android:endY="66"
+                android:type="linear">
+                <item android:color="#FFFFFF" android:offset="0.0" />
+                <item android:color="#67E8F9" android:offset="0.45" />
+                <item android:color="#8B5CF6" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Chi Tiết Lăng Kính Ánh Sáng Tinh Thể Bên Trong -->
+    <path
+        android:fillColor="#50FFFFFF"
+        android:pathData="M54,28 L60,46 L54,49 L48,46 Z" />
+
+    <!-- Ngôi Sao AI Sparkle Góc Trên Bên Phải (Cyan) -->
+    <path
+        android:fillColor="#06B6D4"
+        android:pathData="M78,24 C78,28.4 74.4,32 70,32 C74.4,32 78,35.6 78,40 C78,35.6 81.6,32 86,32 C81.6,32 78,28.4 78,24 Z" />
+
+    <!-- Ngôi Sao AI Sparkle Góc Dưới Bên Trái (Emerald) -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M30,66 C30,69.3 27.3,72 24,72 C27.3,72 30,74.7 30,78 C30,74.7 32.7,72 36,72 C32.7,72 30,69.3 30,66 Z" />
+
+    <!-- Huy Hiệu 4X Nhỏ Tinh Tế ở Đáy -->
+    <path
+        android:fillColor="#A78BFA"
+        android:pathData="M46,74 L50,74 L50,71 L52,71 L52,74 L54,74 L54,76 L52,76 L52,79 L50,79 L50,76 L46,76 Z M57,71 L59,71 L61,75 L63,71 L65,71 L62,75 L65,79 L63,79 L61,75 L59,79 L57,79 L60,75 Z" />
+</vector>

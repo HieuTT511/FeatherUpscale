@@ -1,8 +1,10 @@
 package com.feather.upscale.ui
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,6 +43,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Image
@@ -51,12 +54,14 @@ import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -125,6 +130,8 @@ fun UpscaleScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scrollState = rememberScrollState()
 
+    var showBackDialog by remember { mutableStateOf(false) }
+
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
@@ -139,6 +146,94 @@ fun UpscaleScreen(
 
     val isProcessing = upscaleState is UpscaleState.Processing
     val isPaused = upscaleState is UpscaleState.Paused
+
+    // Chặn sự kiện Back khi đang upscale để hiển thị Dialog lựa chọn
+    BackHandler(enabled = isProcessing || isPaused) {
+        showBackDialog = true
+    }
+
+    // Hộp thoại xác nhận khi người dùng nhấn Back trong lúc đang upscale
+    if (showBackDialog) {
+        AlertDialog(
+            onDismissRequest = { showBackDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = AmberWarning,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Tiến trình Upscale đang chạy",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Bạn đang thực hiện upscale ảnh/truyện. Bạn muốn xử lý thế nào trước khi thoát?",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                    ) {
+                        Text(
+                            text = "💡 Mẹo: Nếu bạn nhấn nút Home hoặc chuyển app khác, tiến trình vẫn tiếp tục chạy ngầm trên thanh thông báo.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showBackDialog = false
+                        viewModel.saveDraftAndExit {
+                            (context as? Activity)?.finish()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = VioletPrimary),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Lưu tạm & Thoát")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            showBackDialog = false
+                            viewModel.cancelAndCleanup {
+                                (context as? Activity)?.finish()
+                            }
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = RoseError),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Hủy tiến trình")
+                    }
+
+                    OutlinedButton(
+                        onClick = { showBackDialog = false },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Tiếp tục")
+                    }
+                }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
 
     // Hiệu ứng nhấp nháy cho GPU status dot
     val pulseTransition = rememberInfiniteTransition(label = "pulse")
@@ -940,7 +1035,7 @@ private fun shareFile(context: Context, filePath: String?) {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = mimeType
             putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(Intent.createChooser(intent, "Chia sẻ kết quả Upscale"))
     } catch (_: Throwable) {}

@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -232,6 +233,57 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
     fun reset() {
         UpscaleStateManager.reset()
         _afterBitmap.value = null
+    }
+
+    /**
+     * Hủy tiến trình upscale, xóa các tệp tạm thời trong cache và bảo toàn 100% file gốc ban đầu.
+     */
+    fun cancelAndCleanup(onComplete: () -> Unit) {
+        cancelUpscale()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                File(appContext.cacheDir, "input_image.png").delete()
+                File(appContext.cacheDir, "input_batch.cbz").delete()
+            } catch (_: Throwable) {}
+            withContext(Dispatchers.Main) {
+                onComplete()
+            }
+        }
+    }
+
+    /**
+     * Lưu trạng thái và file tạm vào thư mục UpScale_Drafts do app tự tạo để tiếp tục sau này.
+     */
+    fun saveDraftAndExit(onComplete: () -> Unit) {
+        cancelUpscale()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val draftsDir = File(appContext.getExternalFilesDir(null) ?: appContext.filesDir, "UpScale_Drafts").apply { mkdirs() }
+                val isZip = _isBatchZip.value
+                val sourceCacheFile = File(appContext.cacheDir, if (isZip) "input_batch.cbz" else "input_image.png")
+                val draftFileName = _selectedFileName.value ?: if (isZip) "draft_batch.cbz" else "draft_image.png"
+
+                if (sourceCacheFile.exists()) {
+                    val targetDraftFile = File(draftsDir, draftFileName)
+                    sourceCacheFile.copyTo(targetDraftFile, overwrite = true)
+                }
+
+                // Lưu metadata cấu hình draft
+                val metaFile = File(draftsDir, "draft_metadata.txt")
+                metaFile.writeText(
+                    "fileName=$draftFileName\n" +
+                    "isBatchZip=$isZip\n" +
+                    "preset=${_selectedPreset.value}\n" +
+                    "scale=${_scale.value}\n" +
+                    "useFp16=${_useFp16.value}\n" +
+                    "forceLowRam=${_forceLowRam.value}\n" +
+                    "timestamp=${System.currentTimeMillis()}"
+                )
+            } catch (_: Throwable) {}
+            withContext(Dispatchers.Main) {
+                onComplete()
+            }
+        }
     }
 
     /**
