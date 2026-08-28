@@ -4,6 +4,36 @@ Tất cả các thay đổi, tính năng mới và bản vá lỗi của ứng d
 
 ---
 
+## 🚀 [v1.7.2] — 2026-08-28
+### 🎨 Cải Thiện Toàn Diện Tính Năng, Giao Diện & Sửa Lỗi (Comprehensive UI/UX & Engine Suite)
+- **1. Sửa Lỗi Nhãn CTA Thích Ứng Video**:
+  - Khắc phục triệt để nhãn nút hành động chính khi chọn video: Hiển thị chính xác `"BẮT ĐẦU UPSCALE VIDEO (4X)"`, `"XEM VIDEO ĐÃ UPSCALE"` và `"Xem video"` thay vì nhãn ảnh/truyện.
+- **2. Tự Động Liên Kết Mô Hình Theo Preset (Preset Auto-Model Binding)**:
+  - Khi chọn preset AI (`Anime & Cartoons`, `Face Recovery`, `Fix Pixelation`, `Auto Denoise`, v.v.), ứng dụng tự động chuyển đổi sang mô hình mạng nơ-ron chuyên dụng tương ứng.
+- **3. Trích Xuất FPS Thực Từ Video (Dynamic Capture Framerate)**:
+  - `VideoProcessor` tự động đọc tốc độ khung hình thực từ metadata nguồn (24fps, 30fps, 60fps), đảm bảo đồng bộ hoàn hảo giữa hình ảnh và luồng âm thanh gốc.
+- **4. Hỗ Trợ Tạm Dừng Khi Xử Lý Hàng Loạt (Batch Zip Pause Guard)**:
+  - Bổ sung vòng lặp kiểm tra tạm dừng giữa các trang trong `BatchZipProcessor`, cho phép tạm dừng/tiếp tục ngay lập tức ở cấp độ từng trang truyện.
+- **5. Hiển Thị Tốc Độ Xử Lý & Thời Gian Dự Kiến (Live Telemetry Speed & ETA)**:
+  - Bổ sung hàng telemetry thời gian thực hiển thị tốc độ xử lý (`tile/s`) và thời gian còn lại ước tính (`~phút/giây`) trong quá trình upscale.
+- **6. Nâng Cấp Giao Diện Thẻ Lỗi & Tự Động Dọn Dẹp Tệp Tạm (OOM Guide & Temp Cleanup)**:
+  - Thẻ thông báo lỗi hiển thị gợi ý thông minh khi gặp áp lực RAM (OOM) cùng nút "Thử lại" tiện lợi.
+  - Tự động quét và dọn dẹp các tệp tạm khi người dùng hủy tiến trình hoặc xảy ra ngoại lệ.
+- **7. Cải Thiện Trợ Năng & Thống Nhất Ngôn Ngữ (A11y & Semantic Roles)**:
+  - Bổ sung `contentDescription` đầy đủ cho 100% biểu tượng hành động và gán `Role.RadioButton` cho các nút chọn tỉ lệ phóng đại (2x, 4x, 8x, 10x).
+  - Tích hợp `SnackbarHost` thông báo khi chọn/đặt lại thư mục lưu tùy chỉnh.
+
+---
+
+## 🚀 [v1.7.1] — 2026-08-28
+### ⚡ Tích Hợp Native NCNN Vulkan C++ & Tăng Cường Độ Nét Contrast-Adaptive Sharpening (CAS-v2)
+- Tích hợp trực tiếp bộ thư viện `libncnn.a` biên dịch sẵn đa kiến trúc (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`).
+- Bổ sung cơ chế Pre-padding 10px triệt tiêu hiện tượng mờ viền giữa các tile ghép.
+- Tích hợp bộ lọc hậu xử lý siêu nét **CAS-v2** tăng cường độ rõ viền nét mực manga và kết cấu ảnh.
+- Bổ sung tính năng nhận diện độ phân giải thực và xem trước song song ảnh gốc / ảnh upscale theo thời gian thực.
+
+---
+
 ## 🚀 [v1.7.0] — 2026-08-28
 ### 📱 Tối Ưu Hóa Toàn Diện Cho Điện Thoại & Thiết Bị Di Động (100% On-Device Mobile AI Suite)
 - **1. Mô Hình AI Rút Gọn Siêu Nhẹ (Lightweight Mobile Models)**:

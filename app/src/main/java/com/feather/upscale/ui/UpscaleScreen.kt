@@ -88,6 +88,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,10 +97,14 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.launch
 import com.feather.upscale.NcnnUpscaler
 import com.feather.upscale.ui.theme.AmberWarning
 import com.feather.upscale.ui.theme.CyanAccent
@@ -139,6 +144,7 @@ fun UpscaleScreen(
     val upscaleState by viewModel.upscaleState.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
     var showBackDialog by remember { mutableStateOf(false) }
@@ -170,6 +176,9 @@ fun UpscaleScreen(
                 context.contentResolver.takePersistableUriPermission(uri, takeFlags)
             } catch (_: Throwable) {}
             viewModel.setCustomOutputDir(uri.toString())
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("Đã chọn thư mục lưu tùy chỉnh thành công")
+            }
         }
     }
 
@@ -188,7 +197,7 @@ fun UpscaleScreen(
             icon = {
                 Icon(
                     imageVector = Icons.Default.Warning,
-                    contentDescription = null,
+                    contentDescription = "Cảnh báo tiến trình đang chạy",
                     tint = AmberWarning,
                     modifier = Modifier.size(32.dp)
                 )
@@ -230,7 +239,7 @@ fun UpscaleScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = VioletPrimary),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(imageVector = Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(imageVector = Icons.Default.Save, contentDescription = "Lưu tạm & Thoát", modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Lưu tạm & Thoát")
                 }
@@ -247,7 +256,7 @@ fun UpscaleScreen(
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = RoseError),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(imageVector = Icons.Default.DeleteForever, contentDescription = "Hủy tiến trình", modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Hủy tiến trình")
                     }
@@ -292,7 +301,7 @@ fun UpscaleScreen(
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = null,
+                                    contentDescription = "Biểu tượng ứng dụng UpScale AI",
                                     tint = Color.White,
                                     modifier = Modifier.size(20.dp)
                                 )
@@ -404,7 +413,7 @@ fun UpscaleScreen(
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.Image,
-                                    contentDescription = null,
+                                    contentDescription = "Chọn ảnh đơn lẻ",
                                     tint = VioletPrimaryLight,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -462,7 +471,7 @@ fun UpscaleScreen(
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.FolderZip,
-                                    contentDescription = null,
+                                    contentDescription = "Chọn tập truyện nén",
                                     tint = CyanAccent,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -514,7 +523,7 @@ fun UpscaleScreen(
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = null,
+                                    contentDescription = "Chọn video siêu phân giải",
                                     tint = EmeraldGpuLight,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -557,7 +566,7 @@ fun UpscaleScreen(
                                     isBatchZip -> Icons.Default.FolderZip
                                     else -> Icons.Default.Image
                                 },
-                                contentDescription = null,
+                                contentDescription = "Biểu tượng tệp nguồn",
                                 tint = when {
                                     isVideo -> EmeraldGpu
                                     isBatchZip -> CyanAccent
@@ -679,19 +688,20 @@ fun UpscaleScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf(
-                        "Anime & Cartoons",
-                        "Face Recovery",
-                        "Fix Pixelation",
-                        "Auto Denoise",
-                        "Lossless Zoom",
-                        "Manga B&W"
-                    ).forEach { preset ->
+                        "🎨 Anime & Cartoons",
+                        "👤 Face Recovery",
+                        "🔧 Fix Pixelation",
+                        "🔇 Auto Denoise",
+                        "🔍 Lossless Zoom",
+                        "📖 Manga B&W"
+                    ).forEach { displayName ->
+                        val preset = displayName.substringAfter(" ")
                         FilterChip(
                             selected = selectedPreset == preset,
                             onClick = { viewModel.setPreset(preset) },
                             label = {
                                 Text(
-                                    text = preset,
+                                    text = displayName,
                                     fontSize = 12.sp,
                                     fontWeight = if (selectedPreset == preset) FontWeight.Bold else FontWeight.Normal
                                 )
@@ -822,7 +832,9 @@ fun UpscaleScreen(
                                 Surface(
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (scale == 2) VioletPrimary else Color.Transparent,
-                                    modifier = Modifier.clickable(enabled = !isProcessing && !isPaused) { viewModel.setScale(2) }
+                                    modifier = Modifier
+                                        .semantics { role = Role.RadioButton }
+                                        .clickable(enabled = !isProcessing && !isPaused) { viewModel.setScale(2) }
                                 ) {
                                     Text(
                                         text = "2x",
@@ -836,7 +848,9 @@ fun UpscaleScreen(
                                 Surface(
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (scale == 4) VioletPrimary else Color.Transparent,
-                                    modifier = Modifier.clickable(enabled = !isProcessing && !isPaused) { viewModel.setScale(4) }
+                                    modifier = Modifier
+                                        .semantics { role = Role.RadioButton }
+                                        .clickable(enabled = !isProcessing && !isPaused) { viewModel.setScale(4) }
                                 ) {
                                     Text(
                                         text = "4x",
@@ -850,7 +864,9 @@ fun UpscaleScreen(
                                 Surface(
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (scale == 8) VioletPrimary else Color.Transparent,
-                                    modifier = Modifier.clickable(enabled = !isProcessing && !isPaused) { viewModel.setScale(8) }
+                                    modifier = Modifier
+                                        .semantics { role = Role.RadioButton }
+                                        .clickable(enabled = !isProcessing && !isPaused) { viewModel.setScale(8) }
                                 ) {
                                     Text(
                                         text = "8x Max",
@@ -864,7 +880,9 @@ fun UpscaleScreen(
                                 Surface(
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (scale == 10) VioletPrimary else Color.Transparent,
-                                    modifier = Modifier.clickable(enabled = !isProcessing && !isPaused) { viewModel.setScale(10) }
+                                    modifier = Modifier
+                                        .semantics { role = Role.RadioButton }
+                                        .clickable(enabled = !isProcessing && !isPaused) { viewModel.setScale(10) }
                                 ) {
                                     Text(
                                         text = "10x (1000%)",
@@ -923,7 +941,12 @@ fun UpscaleScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             if (customOutputDir != null) {
                                 OutlinedButton(
-                                    onClick = { viewModel.setCustomOutputDir(null) },
+                                    onClick = {
+                                        viewModel.setCustomOutputDir(null)
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar("Đã đặt lại thư mục lưu về mặc định (Pictures / Download/UpScale)")
+                                        }
+                                    },
                                     enabled = !isProcessing && !isPaused,
                                     shape = RoundedCornerShape(10.dp)
                                 ) {
@@ -1022,7 +1045,7 @@ fun UpscaleScreen(
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Column(modifier = Modifier.padding(10.dp)) {
-                                            Text("TILES", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                            Text("Ô XỬ LÝ", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                                             Text("${state.completedTiles}/${state.totalTiles}", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
                                         }
                                     }
@@ -1033,7 +1056,7 @@ fun UpscaleScreen(
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Column(modifier = Modifier.padding(10.dp)) {
-                                            Text("TILE SIZE", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                            Text("KÍCH THƯỚC", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                                             Text("${state.currentTileSize}px", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = CyanAccent)
                                         }
                                     }
@@ -1046,6 +1069,44 @@ fun UpscaleScreen(
                                         Column(modifier = Modifier.padding(10.dp)) {
                                             Text("TRANG", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                                             Text("${state.currentPage}/${state.totalPages}", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+                                        }
+                                    }
+                                }
+
+                                // Tốc độ & ETA
+                                if (state.speedTilesPerSec > 0f || state.estimatedRemainingSec > 0L) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = EmeraldGpu.copy(alpha = 0.12f),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                Text("TỐC ĐỘ", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                                Text(
+                                                    "${"%.1f".format(state.speedTilesPerSec)} tile/s",
+                                                    fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = EmeraldGpu
+                                                )
+                                            }
+                                        }
+
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = CyanAccent.copy(alpha = 0.12f),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                Text("THỜI GIAN CÒN", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                                val etaText = when {
+                                                    state.estimatedRemainingSec >= 60 -> "~${state.estimatedRemainingSec / 60} phút ${state.estimatedRemainingSec % 60}s"
+                                                    state.estimatedRemainingSec > 0 -> "~${state.estimatedRemainingSec}s"
+                                                    else -> "Đang tính..."
+                                                }
+                                                Text(etaText, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = CyanAccent)
+                                            }
                                         }
                                     }
                                 }
@@ -1066,7 +1127,7 @@ fun UpscaleScreen(
                                 // KHU VỰC THÔNG TIN TỆP MỚI VÀ NÚT MỞ / CHIA SẺ
                                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldGpu, modifier = Modifier.size(28.dp))
+                                        Icon(imageVector = Icons.Default.CheckCircle, contentDescription = "Hoàn tất thành công", tint = EmeraldGpu, modifier = Modifier.size(28.dp))
                                         Column {
                                             Text(
                                                 text = "🎉 Upscale Hoàn Tất & Đã Lưu!",
@@ -1074,8 +1135,13 @@ fun UpscaleScreen(
                                                 style = MaterialTheme.typography.titleMedium,
                                                 color = EmeraldGpu
                                             )
+                                            val durationSec = state.totalDurationMs / 1000
+                                            val durationText = when {
+                                                durationSec >= 60 -> "⏱ ${durationSec / 60} phút ${durationSec % 60}s"
+                                                else -> "⏱ ${durationSec}s"
+                                            }
                                             Text(
-                                                text = "Đã tự động lưu vào thư mục UpScale • ${state.totalDurationMs / 1000}s",
+                                                text = "Đã tự động lưu vào thư mục UpScale • $durationText",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -1097,7 +1163,7 @@ fun UpscaleScreen(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                                             ) {
-                                                Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldGpu, modifier = Modifier.size(16.dp))
+                                                Icon(imageVector = Icons.Default.CheckCircle, contentDescription = "Đã xác minh tệp", tint = EmeraldGpu, modifier = Modifier.size(16.dp))
                                                 Text(
                                                     text = if (state.isVerified) "Đã xác minh tệp hợp lệ trong thư viện thiết bị" else "Đang hoàn tất tệp",
                                                     fontSize = 11.sp,
@@ -1137,9 +1203,9 @@ fun UpscaleScreen(
                                             shape = RoundedCornerShape(12.dp),
                                             colors = ButtonDefaults.buttonColors(containerColor = EmeraldGpu)
                                         ) {
-                                            Icon(imageVector = Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Icon(imageVector = Icons.Default.Visibility, contentDescription = "Xem kết quả", modifier = Modifier.size(18.dp))
                                             Spacer(modifier = Modifier.width(6.dp))
-                                            Text(if (isBatchZip) "Mở tập" else "Xem ảnh", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                            Text(if (isVideo) "Xem video" else if (isBatchZip) "Mở tập" else "Xem ảnh", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                         }
 
                                         OutlinedButton(
@@ -1149,7 +1215,7 @@ fun UpscaleScreen(
                                             colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanAccent),
                                             border = BorderStroke(1.dp, CyanAccent.copy(alpha = 0.6f))
                                         ) {
-                                            Icon(imageVector = Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Icon(imageVector = Icons.Default.Folder, contentDescription = "Mở thư mục lưu", modifier = Modifier.size(18.dp))
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Text("Thư mục", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                         }
@@ -1161,26 +1227,52 @@ fun UpscaleScreen(
                                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
                                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
                                         ) {
-                                            Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Icon(imageVector = Icons.Default.Share, contentDescription = "Chia sẻ kết quả", modifier = Modifier.size(18.dp))
                                         }
                                     }
                                 }
                             }
 
                             is UpscaleState.Error -> {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = RoseError, modifier = Modifier.size(28.dp))
-                                    Column {
-                                        Text(
-                                            text = if (state.isOom) "Cảnh Báo Áp Lực RAM (OOM)" else "Lỗi Xử Lý",
-                                            fontWeight = FontWeight.Bold,
-                                            color = RoseError
-                                        )
-                                        Text(
-                                            text = state.message,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Icon(imageVector = Icons.Default.Warning, contentDescription = "Lỗi", tint = RoseError, modifier = Modifier.size(28.dp))
+                                        Column {
+                                            Text(
+                                                text = if (state.isOom) "Cảnh Báo Áp Lực RAM (OOM)" else "Lỗi Xử Lý",
+                                                fontWeight = FontWeight.Bold,
+                                                color = RoseError
+                                            )
+                                            Text(
+                                                text = state.message,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    if (state.isOom) {
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = AmberWarning.copy(alpha = 0.12f),
+                                            border = BorderStroke(1.dp, AmberWarning.copy(alpha = 0.3f))
+                                        ) {
+                                            Text(
+                                                text = "💡 Bật OOM Guard (128px Tiling) hoặc giảm tỉ lệ phóng để tiết kiệm RAM",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = AmberWarning,
+                                                modifier = Modifier.padding(10.dp)
+                                            )
+                                        }
+                                    }
+                                    Button(
+                                        onClick = { viewModel.startUpscale() },
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = VioletPrimary),
+                                        enabled = selectedUri != null
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Refresh, contentDescription = "Thử lại", modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Thử lại", fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -1199,7 +1291,7 @@ fun UpscaleScreen(
                                         modifier = Modifier.weight(1f),
                                         shape = RoundedCornerShape(14.dp)
                                     ) {
-                                        Icon(imageVector = Icons.Default.Pause, contentDescription = null)
+                                        Icon(imageVector = Icons.Default.Pause, contentDescription = "Tạm dừng tiến trình")
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text("Tạm dừng")
                                     }
@@ -1210,7 +1302,7 @@ fun UpscaleScreen(
                                         shape = RoundedCornerShape(14.dp),
                                         colors = ButtonDefaults.buttonColors(containerColor = VioletPrimary)
                                     ) {
-                                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = "Tiếp tục tiến trình")
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text("Tiếp tục")
                                     }
@@ -1222,7 +1314,7 @@ fun UpscaleScreen(
                                     shape = RoundedCornerShape(14.dp),
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = RoseError)
                                 ) {
-                                    Icon(imageVector = Icons.Default.Close, contentDescription = null)
+                                    Icon(imageVector = Icons.Default.Close, contentDescription = "Hủy tiến trình")
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text("Hủy")
                                 }
@@ -1249,9 +1341,11 @@ fun UpscaleScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(imageVector = Icons.Default.Visibility, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+                            Icon(imageVector = Icons.Default.Visibility, contentDescription = "Xem kết quả", tint = Color.White, modifier = Modifier.size(22.dp))
                             Text(
-                                text = if (isBatchZip) "MỞ TẬP TRUYỆN ĐÃ UPSCALE" else "XEM ẢNH ĐÃ UPSCALE (4K UHD)",
+                                text = if (isVideo) "XEM VIDEO ĐÃ UPSCALE (${scale}X)"
+                                    else if (isBatchZip) "MỞ TẬP TRUYỆN ĐÃ UPSCALE"
+                                    else "XEM ẢNH ĐÃ UPSCALE (4K UHD)",
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 15.sp,
                                 letterSpacing = 0.5.sp
@@ -1276,7 +1370,7 @@ fun UpscaleScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Icon(imageVector = Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Icon(imageVector = Icons.Default.Folder, contentDescription = "Mở thư mục lưu", modifier = Modifier.size(18.dp))
                                 Text("THƯ MỤC ĐẦU RA", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
@@ -1294,7 +1388,7 @@ fun UpscaleScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Icon(imageVector = Icons.Default.Refresh, contentDescription = "Tệp mới", modifier = Modifier.size(18.dp))
                                 Text("TỆP MỚI", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                         }
@@ -1320,12 +1414,14 @@ fun UpscaleScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
+                            contentDescription = "Bắt đầu siêu phân giải AI",
                             tint = Color.White,
                             modifier = Modifier.size(24.dp)
                         )
                         Text(
-                            text = if (isBatchZip)
+                            text = if (isVideo)
+                                "BẮT ĐẦU UPSCALE VIDEO (${scale}X)"
+                            else if (isBatchZip)
                                 "BẮT ĐẦU UPSCALE TẬP TRUYỆN (${scale}X)"
                             else
                                 "BẮT ĐẦU UPSCALE ẢNH (${scale}X)",

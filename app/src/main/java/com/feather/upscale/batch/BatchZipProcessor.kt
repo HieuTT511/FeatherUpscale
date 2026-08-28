@@ -157,6 +157,11 @@ class BatchZipProcessor(
         try {
             ZipFile(inputFile).use { zip ->
                 for (i in startFromPageIndex until totalPages) {
+                    // Kiểm tra tạm dừng giữa các trang
+                    while (isPaused()) {
+                        kotlinx.coroutines.delay(100)
+                    }
+
                     if (isCancelled()) throw CancellationException("Đã hủy xử lý batch ZIP")
 
                     val page = pages[i]

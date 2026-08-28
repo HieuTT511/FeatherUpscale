@@ -75,7 +75,13 @@ class VideoProcessor(
         val origW = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 1280
         val origH = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 720
 
-        val fps = 30 // FPS chuẩn cho video xuất xưởng
+        val fps = try {
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
+                ?.toFloatOrNull()?.toInt()?.takeIf { it > 0 }
+                ?: 30
+        } catch (_: Throwable) {
+            30
+        }
         val frameIntervalUs = 1_000_000L / fps
         val totalFrames = ((durationMs * 1000L) / frameIntervalUs).toInt().coerceAtLeast(1)
 

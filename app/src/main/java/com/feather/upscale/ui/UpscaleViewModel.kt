@@ -183,6 +183,14 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
     fun setPreset(preset: String) {
         _selectedPreset.value = preset
         _isAutoDetected.value = false
+        // Auto-link model phù hợp theo preset
+        val autoModel = when (preset) {
+            "Face Recovery", "Fix Pixelation" -> NcnnUpscaler.MODEL_PHOTO_X4
+            "Anime & Cartoons", "Manga B&W", "Auto Denoise", "Lossless Zoom" -> NcnnUpscaler.MODEL_ANIME_6B
+            "Anime Video" -> NcnnUpscaler.MODEL_VIDEO_V3
+            else -> NcnnUpscaler.MODEL_ANIME_6B
+        }
+        _mobileModel.value = autoModel
     }
 
     fun setCustomOutputDir(path: String?) {

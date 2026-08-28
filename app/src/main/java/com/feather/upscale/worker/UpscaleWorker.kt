@@ -368,6 +368,9 @@ class UpscaleWorker(
                     bitmap = inputBitmap,
                     onProgress = { currentTile, totalTiles ->
                         val progressFraction = if (totalTiles > 0) currentTile.toFloat() / totalTiles else 0f
+                        val elapsed = (System.currentTimeMillis() - startTime) / 1000f
+                        val speed = if (elapsed > 0.5f) currentTile / elapsed else 0f
+                        val remaining = if (speed > 0.01f) ((totalTiles - currentTile) / speed).toLong() else 0L
                         UpscaleStateManager.updateState(
                             UpscaleState.Processing(
                                 currentPage = 1,
@@ -377,6 +380,8 @@ class UpscaleWorker(
                                 currentTileSize = tileProcessor.tileSize,
                                 isLowRam = tileProcessor.isLowRam,
                                 progressFraction = progressFraction,
+                                speedTilesPerSec = speed,
+                                estimatedRemainingSec = remaining,
                                 statusMessage = "Tile $currentTile/$totalTiles (${(progressFraction * 100).toInt()}%)"
                             )
                         )
@@ -444,6 +449,12 @@ class UpscaleWorker(
 
         } catch (e: Throwable) {
             val errorMsg = e.message ?: "Lỗi xử lý siêu phân giải"
+            // Cleanup orphaned temp files
+            try {
+                applicationContext.cacheDir.listFiles()?.filter {
+                    it.name.startsWith("temp_video_") || it.name.startsWith("temp_upscaled_")
+                }?.forEach { it.delete() }
+            } catch (_: Throwable) {}
             UpscaleStateManager.updateState(UpscaleState.Error(errorMsg))
             notificationManager.dismiss()
             Result.failure()
