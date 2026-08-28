@@ -19,7 +19,7 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * WorkManager CoroutineWorker chạy quá trình Upscale nền (Single Image / Batch ZIP).
  *
- * - Hỗ trợ Foreground Service với notification thanh tiến độ.
+ * - Hỗ trợ Foreground Service an toàn với notification thanh tiến độ.
  * - Tương tác hai chiều với [UpscaleStateManager] cho phép Pause / Resume / Cancel.
  * - Tự động retry với tile size nhỏ hơn khi gặp áp lực RAM / OOM.
  */
@@ -57,16 +57,20 @@ class UpscaleWorker(
         val startTime = System.currentTimeMillis()
 
         try {
-            // Khởi động Foreground Notification
-            val initialForegroundInfo = notificationManager.createForegroundInfo(
-                pageIndex = 1,
-                totalPages = 1,
-                tileIndex = 0,
-                totalTiles = 1,
-                isPaused = false,
-                tileSize = if (forceLowRam) 128 else 256
-            )
-            setForeground(initialForegroundInfo)
+            // Khởi động Foreground Notification an toàn
+            try {
+                val initialForegroundInfo = notificationManager.createForegroundInfo(
+                    pageIndex = 1,
+                    totalPages = 1,
+                    tileIndex = 0,
+                    totalTiles = 1,
+                    isPaused = false,
+                    tileSize = if (forceLowRam) 128 else 256
+                )
+                setForeground(initialForegroundInfo)
+            } catch (_: Throwable) {
+                // Tiếp tục xử lý background bình thường nếu quyền notification bị từ chối
+            }
 
             val tileProcessor = TileProcessor(
                 context = applicationContext,

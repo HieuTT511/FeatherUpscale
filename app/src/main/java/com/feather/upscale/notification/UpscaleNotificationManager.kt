@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.ForegroundInfo
@@ -48,7 +49,7 @@ class UpscaleNotificationManager(private val context: Context) {
     }
 
     /**
-     * Tạo ForegroundInfo cho WorkManager.
+     * Tạo ForegroundInfo cho WorkManager tương thích hoàn toàn từ Android 8 đến Android 17+.
      */
     fun createForegroundInfo(
         pageIndex: Int,
@@ -66,7 +67,15 @@ class UpscaleNotificationManager(private val context: Context) {
             isPaused = isPaused,
             tileSize = tileSize
         )
-        return ForegroundInfo(NOTIFICATION_ID, notification)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ForegroundInfo(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else {
+            ForegroundInfo(NOTIFICATION_ID, notification)
+        }
     }
 
     /**
@@ -88,7 +97,7 @@ class UpscaleNotificationManager(private val context: Context) {
             if (totalTiles > 0) ((tileIndex.toFloat() / totalTiles) * 100).toInt().coerceIn(0, 100) else 0
         }
 
-        val contentTitle = if (isPaused) "FeatherUpscale — Đã tạm dừng" else "Đang upscale ảnh..."
+        val contentTitle = if (isPaused) "UpScale — Đã tạm dừng" else "Đang upscale ảnh AI..."
         val contentText = if (totalPages > 1) {
             "Trang $pageIndex/$totalPages (Tile $tileIndex/$totalTiles, ${tileSize}px) - $totalProgressPercent%"
         } else {
@@ -150,12 +159,15 @@ class UpscaleNotificationManager(private val context: Context) {
         isPaused: Boolean,
         tileSize: Int,
     ) {
-        val notification = buildNotification(pageIndex, totalPages, tileIndex, totalTiles, isPaused, tileSize)
-        notificationManager.notify(NOTIFICATION_ID, notification)
+        try {
+            val notification = buildNotification(pageIndex, totalPages, tileIndex, totalTiles, isPaused, tileSize)
+            notificationManager.notify(NOTIFICATION_ID, notification)
+        } catch (_: Throwable) {}
     }
 
     fun dismiss() {
-        notificationManager.cancel(NOTIFICATION_ID)
+        try {
+            notificationManager.cancel(NOTIFICATION_ID)
+        } catch (_: Throwable) {}
     }
 }
-

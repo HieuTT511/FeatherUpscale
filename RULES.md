@@ -52,3 +52,10 @@ Mỗi lần phát hành bản build mới, hệ thống tự động nhảy vers
 - Tự động tạo kho lưu trữ Git và đẩy lên tài khoản GitHub đang đăng nhập trên VS Code (`HieuTT511`).
 - Duy trì branch chính thức `main` luôn ở trạng thái mã nguồn sạch, build được và đã kiểm thử thành công.
 
+---
+
+## 📌 Quy Tắc 7: Tìm Hiểu Thuật Toán Trước Khi Triển Khai
+- Trước khi triển khai hoặc thay đổi bất kỳ thuật toán nào, phải tìm hiểu đầy đủ nguyên lý hoạt động, đầu vào/đầu ra, các giả định, trường hợp biên và giới hạn áp dụng của thuật toán.
+- Phải đánh giá tính đúng đắn, độ phức tạp thời gian/bộ nhớ và các đánh đổi liên quan trước khi lựa chọn hoặc triển khai.
+- Khi có nhiều phương án, cần so sánh các phương án và nêu rõ lý do chọn phương án được sử dụng trong mã nguồn.
+

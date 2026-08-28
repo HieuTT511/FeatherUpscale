@@ -1,7 +1,6 @@
 package com.feather.upscale
 
 import android.content.Context
-import android.util.Log
 import java.io.File
 
 /**
@@ -14,7 +13,6 @@ import java.io.File
  */
 object NcnnUpscaler {
 
-    private const val TAG = "NcnnUpscaler"
     const val MODEL_PARAM_ASSET = "models/realesrgan-x4.param"
     const val MODEL_BIN_ASSET = "models/realesrgan-x4.bin"
 
@@ -35,6 +33,15 @@ object NcnnUpscaler {
     }
 
     /** true nếu native được build với ncnn (FEATHER_HAS_NCNN). */
+    fun hasNcnn(): Boolean {
+        if (!libraryLoaded) return false
+        return try {
+            nativeHasNcnn()
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     external fun nativeHasNcnn(): Boolean
 
     /**
@@ -68,9 +75,11 @@ object NcnnUpscaler {
 
     private fun copyAssetIfNeeded(context: Context, assetPath: String, target: File) {
         if (target.exists() && target.length() > 0) return
-        context.assets.open(assetPath).use { input ->
-            target.outputStream().use { output -> input.copyTo(output) }
-        }
+        try {
+            context.assets.open(assetPath).use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            }
+        } catch (_: Throwable) {}
     }
 
     /**
@@ -89,6 +98,7 @@ object NcnnUpscaler {
         }
         return try {
             nativeUpscaleTile(pixels, w, h, scale, useFp16)
+                ?: fallbackUpscale(pixels, w, h, scale)
         } catch (_: OutOfMemoryError) {
             null // caller sẽ retry tile nhỏ hơn
         } catch (_: Throwable) {
@@ -102,9 +112,9 @@ object NcnnUpscaler {
         val oh = h * scale
         val out = ByteArray(ow * oh * 4)
         for (y in 0 until oh) {
-            val sy = y / scale
+            val sy = (y / scale).coerceIn(0, h - 1)
             for (x in 0 until ow) {
-                val sx = x / scale
+                val sx = (x / scale).coerceIn(0, w - 1)
                 val srcIdx = (sy * w + sx) * 4
                 val dstIdx = (y * ow + x) * 4
                 out[dstIdx] = pixels[srcIdx]

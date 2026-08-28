@@ -61,6 +61,22 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
 
     val upscaleState: StateFlow<UpscaleState> = UpscaleStateManager.state
 
+    init {
+        // Lắng nghe trạng thái hoàn tất để nạp ảnh kết quả vào Preview Slider
+        viewModelScope.launch {
+            UpscaleStateManager.state.collect { state ->
+                if (state is UpscaleState.Completed) {
+                    val outPath = state.outputPath
+                    if (outPath != null && File(outPath).exists() && !_isBatchZip.value) {
+                        try {
+                            _afterBitmap.value = decodeSampledPreviewFromFile(outPath, 2400)
+                        } catch (_: Throwable) {}
+                    }
+                }
+            }
+        }
+    }
+
     fun setScale(newScale: Int) {
         _scale.value = newScale
     }
@@ -216,6 +232,24 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         return appContext.contentResolver.openInputStream(uri)?.use { stream ->
             BitmapFactory.decodeStream(stream, null, decodeOptions)
         }
+    }
+
+    private fun decodeSampledPreviewFromFile(filePath: String, maxDimension: Int): Bitmap? {
+        val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(filePath, boundsOptions)
+        if (boundsOptions.outWidth <= 0 || boundsOptions.outHeight <= 0) return null
+
+        val maxDim = maxOf(boundsOptions.outWidth, boundsOptions.outHeight)
+        var sampleSize = 1
+        while (maxDim / (sampleSize * 2) >= maxDimension) {
+            sampleSize *= 2
+        }
+
+        val decodeOptions = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        return BitmapFactory.decodeFile(filePath, decodeOptions)
     }
 
     private fun createMangaThumbnailPlaceholder(): Bitmap {

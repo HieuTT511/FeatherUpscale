@@ -16,6 +16,7 @@ import kotlin.coroutines.cancellation.CancellationException
  *
  * OOM guard cho máy 4GB RAM & file lớn (lên tới 1GB):
  * - Giới hạn kích thước output tối đa an toàn (MAX_OUTPUT_DIMENSION = 4096px / 4K UHD) để tránh mảng IntArray 1.5GB tràn heap.
+ * - Hỗ trợ và tự động chuyển đổi Hardware Bitmap sang Software Bitmap để tránh crash `getPixels()`.
  * - Single-tile memory footprint: blend trực tiếp vào master buffer thay vì cache toàn bộ tiles.
  * - Check available memory trước mỗi tile.
  * - OutOfMemoryError -> tự retry với tile nhỏ hơn (128 -> 64).
@@ -200,13 +201,19 @@ class TileProcessor(
 
     /**
      * Thu nhỏ nhẹ ảnh đầu vào nếu kích thước sau upscale vượt quá 4K (4096px)
-     * nhằm bảo vệ Java heap không bị tràn (max 64MB cho master IntArray).
+     * và chuyển đổi Hardware Bitmap sang Software Bitmap để tránh crash getPixels.
      */
     private fun prepareSafeBitmap(input: Bitmap): Bitmap {
-        val targetOutW = input.width * scale
-        val targetOutH = input.height * scale
+        val softwareBitmap = if (input.config == Bitmap.Config.HARDWARE || (!input.isMutable && input.config != Bitmap.Config.ARGB_8888)) {
+            input.copy(Bitmap.Config.ARGB_8888, false) ?: input
+        } else {
+            input
+        }
+
+        val targetOutW = softwareBitmap.width * scale
+        val targetOutH = softwareBitmap.height * scale
         if (targetOutW <= MAX_OUTPUT_DIMENSION && targetOutH <= MAX_OUTPUT_DIMENSION) {
-            return input
+            return softwareBitmap
         }
 
         val scaleRatio = minOf(
@@ -214,10 +221,10 @@ class TileProcessor(
             MAX_OUTPUT_DIMENSION.toFloat() / targetOutH
         )
 
-        val newW = (input.width * scaleRatio).toInt().coerceAtLeast(64)
-        val newH = (input.height * scaleRatio).toInt().coerceAtLeast(64)
+        val newW = (softwareBitmap.width * scaleRatio).toInt().coerceAtLeast(64)
+        val newH = (softwareBitmap.height * scaleRatio).toInt().coerceAtLeast(64)
 
-        return Bitmap.createScaledBitmap(input, newW, newH, true)
+        return Bitmap.createScaledBitmap(softwareBitmap, newW, newH, true)
     }
 
     private suspend fun processWithTileSize(
@@ -227,12 +234,18 @@ class TileProcessor(
         isPaused: () -> Boolean,
         isCancelled: () -> Boolean,
     ): Bitmap {
-        val w = bitmap.width
-        val h = bitmap.height
+        val safeBitmap = if (bitmap.config == Bitmap.Config.HARDWARE) {
+            bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: bitmap
+        } else {
+            bitmap
+        }
+
+        val w = safeBitmap.width
+        val h = safeBitmap.height
         val outW = w * scale
         val outH = h * scale
 
-        val srcPixels = IntArray(w * h).also { bitmap.getPixels(it, 0, w, 0, 0, w, h) }
+        val srcPixels = IntArray(w * h).also { safeBitmap.getPixels(it, 0, w, 0, 0, w, h) }
         val outputPixels = IntArray(outW * outH)
         val covered = BitSet(outW * outH)
 
