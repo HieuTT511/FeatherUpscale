@@ -4,17 +4,20 @@ import android.content.Context
 import java.io.File
 
 /**
- * Wrapper JNI cho NCNN Real-ESRGAN (Vulkan backend).
+ * Wrapper JNI cho NCNN Real-ESRGAN (https://github.com/xinntao/Real-ESRGAN).
  *
- * - Load library "featherup" (xem app/src/main/cpp/CMakeLists.txt).
- * - Model đặt trong assets: models/realesrgan-x4.param + .bin
- *   -> copy sang filesDir/models ở lần chạy đầu (NCNN load từ file path).
- * - Hỗ trợ cờ FP16 (Half-precision) giúp giảm 50% VRAM GPU.
+ * - Hỗ trợ các model:
+ *   + RealESRGAN_x4plus_anime_6B (Tối ưu chuyên dụng cho Manga / Anime / Manhwa)
+ *   + RealESRGAN_x4plus (Ảnh chụp chân dung, phong cảnh nghệ thuật)
+ *   + realesr-animevideov3 (Siêu tốc độ)
+ * - Tăng tốc GPU Vulkan & FP16 Half-Precision (giảm 50% VRAM GPU).
  */
 object NcnnUpscaler {
 
-    const val MODEL_PARAM_ASSET = "models/realesrgan-x4.param"
-    const val MODEL_BIN_ASSET = "models/realesrgan-x4.bin"
+    const val MODEL_ANIME_PARAM_ASSET = "models/realesrgan-x4plus-anime.param"
+    const val MODEL_ANIME_BIN_ASSET = "models/realesrgan-x4plus-anime.bin"
+    const val MODEL_PHOTO_PARAM_ASSET = "models/realesrgan-x4plus.param"
+    const val MODEL_PHOTO_BIN_ASSET = "models/realesrgan-x4plus.bin"
 
     @Volatile
     private var initialized = false
@@ -42,7 +45,24 @@ object NcnnUpscaler {
         }
     }
 
+    fun getGpuCount(): Int {
+        if (!libraryLoaded) return 0
+        return try {
+            nativeGetGpuCount()
+        } catch (_: Throwable) {
+            0
+        }
+    }
+
     external fun nativeHasNcnn(): Boolean
+    external fun nativeGetGpuCount(): Int
+
+    external fun nativeInit(
+        paramPath: String,
+        binPath: String,
+        gpuid: Int = 0,
+        useFp16: Boolean = true
+    ): Boolean
 
     /**
      * Upscale một tile RGBA bytes qua JNI.
@@ -57,19 +77,22 @@ object NcnnUpscaler {
     ): ByteArray?
 
     /**
-     * Copy model từ assets sang filesDir/models (idempotent) và trả về cặp path.
-     * Gọi hàm này trước khi dùng native inference thật.
+     * Đảm bảo model files tồn tại trong bộ nhớ trong.
      */
-    fun ensureModelFiles(context: Context): Pair<File, File> {
+    fun ensureModelFiles(context: Context, isAnime: Boolean = true): Pair<File, File> {
         val dir = File(context.filesDir, "models").apply { mkdirs() }
-        val paramFile = File(dir, "realesrgan-x4.param")
-        val binFile = File(dir, "realesrgan-x4.bin")
+        val paramName = if (isAnime) "realesrgan-x4plus-anime.param" else "realesrgan-x4plus.param"
+        val binName = if (isAnime) "realesrgan-x4plus-anime.bin" else "realesrgan-x4plus.bin"
 
-        if (!initialized) {
-            copyAssetIfNeeded(context, MODEL_PARAM_ASSET, paramFile)
-            copyAssetIfNeeded(context, MODEL_BIN_ASSET, binFile)
-            initialized = true
-        }
+        val paramAsset = if (isAnime) MODEL_ANIME_PARAM_ASSET else MODEL_PHOTO_PARAM_ASSET
+        val binAsset = if (isAnime) MODEL_ANIME_BIN_ASSET else MODEL_PHOTO_BIN_ASSET
+
+        val paramFile = File(dir, paramName)
+        val binFile = File(dir, binName)
+
+        copyAssetIfNeeded(context, paramAsset, paramFile)
+        copyAssetIfNeeded(context, binAsset, binFile)
+
         return paramFile to binFile
     }
 
@@ -84,7 +107,6 @@ object NcnnUpscaler {
 
     /**
      * Upscale tile với kiểu tiện dụng cho TileProcessor.
-     * Trả về null nếu native không khả dụng / lỗi OOM native.
      */
     fun upscaleTile(
         pixels: ByteArray,
@@ -98,15 +120,12 @@ object NcnnUpscaler {
         }
         return try {
             nativeUpscaleTile(pixels, w, h, scale, useFp16)
-                ?: fallbackUpscale(pixels, w, h, scale)
-        } catch (_: OutOfMemoryError) {
-            null // caller sẽ retry tile nhỏ hơn
         } catch (_: Throwable) {
             fallbackUpscale(pixels, w, h, scale)
         }
     }
 
-    /** Fallback nearest/bilinear pure-Kotlin khi chạy không có native JNI */
+    /** Fallback nếu JNI chưa build hoặc crash. */
     internal fun fallbackUpscale(pixels: ByteArray, w: Int, h: Int, scale: Int): ByteArray {
         val ow = w * scale
         val oh = h * scale
