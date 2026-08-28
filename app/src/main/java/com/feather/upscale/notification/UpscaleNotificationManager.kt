@@ -122,7 +122,6 @@ class UpscaleNotificationManager(private val context: Context) {
             .setProgress(100, totalProgressPercent, false)
 
         if (isPaused) {
-            // Nút Tiếp tục (Resume)
             val resumeIntent = Intent(ACTION_RESUME).setPackage(context.packageName)
             val resumePendingIntent = PendingIntent.getBroadcast(
                 context, 1, resumeIntent,
@@ -130,7 +129,6 @@ class UpscaleNotificationManager(private val context: Context) {
             )
             builder.addAction(android.R.drawable.ic_media_play, "Tiếp tục", resumePendingIntent)
         } else {
-            // Nút Tạm dừng (Pause)
             val pauseIntent = Intent(ACTION_PAUSE).setPackage(context.packageName)
             val pausePendingIntent = PendingIntent.getBroadcast(
                 context, 2, pauseIntent,
@@ -139,7 +137,6 @@ class UpscaleNotificationManager(private val context: Context) {
             builder.addAction(android.R.drawable.ic_media_pause, "Tạm dừng", pausePendingIntent)
         }
 
-        // Nút Hủy (Cancel)
         val cancelIntent = Intent(ACTION_CANCEL).setPackage(context.packageName)
         val cancelPendingIntent = PendingIntent.getBroadcast(
             context, 3, cancelIntent,
@@ -161,6 +158,30 @@ class UpscaleNotificationManager(private val context: Context) {
     ) {
         try {
             val notification = buildNotification(pageIndex, totalPages, tileIndex, totalTiles, isPaused, tileSize)
+            notificationManager.notify(NOTIFICATION_ID, notification)
+        } catch (_: Throwable) {}
+    }
+
+    /** Hiển thị thông báo khi hoàn thành */
+    fun showCompleted(outputFileName: String, durationMs: Long) {
+        try {
+            val openAppIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val openAppPendingIntent = PendingIntent.getActivity(
+                context, 0, openAppIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setContentTitle("🎉 UpScale hoàn tất!")
+                .setContentText("Tệp: $outputFileName • Thời gian: ${durationMs / 1000}s")
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentIntent(openAppPendingIntent)
+                .setAutoCancel(true)
+                .setOngoing(false)
+                .build()
+
             notificationManager.notify(NOTIFICATION_ID, notification)
         } catch (_: Throwable) {}
     }

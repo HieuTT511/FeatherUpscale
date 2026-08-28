@@ -142,6 +142,7 @@ class BatchZipProcessor(
         outputFile: File,
         startFromPageIndex: Int = 0,
         onProgress: ((BatchProgress) -> Unit)? = null,
+        onPreviewUpdate: ((Bitmap) -> Unit)? = null,
         isPaused: () -> Boolean = { false },
         isCancelled: () -> Boolean = { false },
     ): File = withContext(Dispatchers.IO) {
@@ -184,6 +185,7 @@ class BatchZipProcessor(
                                 )
                             )
                         },
+                        onPreviewUpdate = onPreviewUpdate,
                         isPaused = isPaused,
                         isCancelled = isCancelled
                     )

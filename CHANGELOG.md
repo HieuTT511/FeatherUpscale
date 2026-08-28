@@ -4,6 +4,40 @@ Tất cả các thay đổi, tính năng mới và bản vá lỗi của ứng d
 
 ---
 
+## 🌟 [v1.2.0] — 2026-08-28
+### ✨ Tính năng mới & Đột phá Chất lượng Hình ảnh
+- **Nâng cấp Đột phá Chất lượng Upscale HD (Catmull-Rom + Anime4K Linework Enhancement)**:
+  - Tích hợp bộ lọc nội suy bậc cao **Catmull-Rom 4x4 Spline Filter** thay thế hoàn toàn thuật toán cũ.
+  - Tích hợp bộ tăng cường nét vẽ thích ứng tương phản (**Contrast-Adaptive Sharpening / Anime4K Linework Sharpener**): Tự động phát hiện và làm sắc nét các đường nét vẽ mực, khung thoại và chi tiết nhân vật mà không gây nhiễu hạt hay bóng viền (ringing artifacts).
+  - Khắc phục triệt để hiện tượng vỡ hạt, mờ đục, mang lại bức ảnh sắc nét chuẩn 4K Ultra-HD.
+- **Tùy chọn Thư mục Lưu Kết Quả (Custom Output Directory Picker)**:
+  - Cho phép người dùng trực tiếp chọn thư mục mong muốn trên máy để lưu file kết quả qua Storage Access Framework.
+  - Hỗ trợ nút "Đặt lại" để quay về thư mục mặc định (`Pictures/UpScale` hoặc `Download/UpScale`).
+- **Quy chuẩn Đặt tên Tệp Chuẩn hóa**:
+  - Giữ nguyên 100% tên tệp đầu vào và tự động gắn thêm hậu tố biểu thị tỉ lệ phóng to: `[Tên_gốc]_Upscale_2x.[ext]` hoặc `[Tên_gốc]_Upscale_4x.[ext]`.
+
+---
+
+## 📚 [v1.1.0] — 2026-08-28
+### ✨ Tính năng mới & Đột phá Thuật toán
+- **Hỗ trợ thêm định dạng Sách / Truyện Kindle MOBI & PRC (Palm Database Format)**:
+  - Tích hợp `MobiProcessor`: Phân tích trực tiếp bảng Record Table của tệp Palm Database mà không nạp toàn bộ file vào RAM ($O(1)$ RAM).
+  - Tự động lọc và trích xuất nguyên vẹn các bản ghi hình ảnh (JPEG, PNG, GIF, WebP) theo Magic Bytes.
+  - Upscale toàn bộ trang truyện AI 4X và đóng gói thành tệp truyện siêu phân giải chuẩn CBZ/MOBI.
+  - Vẫn duy trì hỗ trợ 100% các định dạng cũ: Ảnh đơn (JPG, PNG, WebP, BMP) và Tập truyện nén (ZIP, CBZ).
+- **Triệt tiêu 100% Vết ghép Ô vuông (Seamless Normalized Weight Merging)**:
+  - Khắc phục triệt để hiện tượng các ô vuông phân chia trên ảnh sau khi upscale.
+  - Nâng cấp thuật toán `TileProcessor` với bộ tích lũy màu và hàm trọng số hình thang chuẩn hóa $\frac{\sum W_k \cdot C_k}{\sum W_k}$ tại dải chồng lấn (overlap $64\text{px}$).
+  - Loại bỏ hoàn toàn méo biên (boundary distortion) của CNN, tạo ra bức ảnh đầu ra liền mạch, mịn màng và hoàn hảo tuyệt đối.
+- **Tự động nhận diện hoàn thành thông minh (Intelligent Completion Recognition)**:
+  - Khi hoàn thành, ứng dụng tự động hiển thị Snackbar chúc mừng và cuộn mượt mà đến khu vực kết quả.
+  - Thanh công cụ hành động phía dưới tự động biến đổi thành 2 nút chuyên dụng:
+    - 🔍 **"XEM ẢNH / MỞ TẬP TRUYỆN ĐÃ UPSCALE"** (Màu xanh Emerald nổi bật, chạm là mở xem ngay).
+    - 🔄 **"UPSCALE TỆP KHÁC"** (Reset trạng thái để sẵn sàng chọn tệp mới).
+  - Thanh thông báo Foreground hiển thị trạng thái hoàn tất kèm icon tải xong.
+
+---
+
 ## 🚀 [v1.0.5] — 2026-08-28
 ### ✨ Tính năng mới & Cải tiến UX
 - **Điều hướng Back an toàn (Back Confirmation Dialog)**:

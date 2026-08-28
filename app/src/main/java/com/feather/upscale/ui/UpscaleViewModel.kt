@@ -37,6 +37,9 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedFileName = MutableStateFlow<String?>(null)
     val selectedFileName: StateFlow<String?> = _selectedFileName.asStateFlow()
 
+    private val _customOutputDir = MutableStateFlow<String?>(null)
+    val customOutputDir: StateFlow<String?> = _customOutputDir.asStateFlow()
+
     private val _isBatchZip = MutableStateFlow(false)
     val isBatchZip: StateFlow<Boolean> = _isBatchZip.asStateFlow()
 
@@ -110,6 +113,10 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         _isAutoDetected.value = false
     }
 
+    fun setCustomOutputDir(path: String?) {
+        _customOutputDir.value = path
+    }
+
     fun onImageSelected(uri: Uri) {
         _selectedUri.value = uri
         _isBatchZip.value = false
@@ -135,7 +142,7 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun onZipSelected(uri: Uri) {
+    fun onComicSelected(uri: Uri) {
         _selectedUri.value = uri
         _isBatchZip.value = true
         _afterBitmap.value = null
@@ -144,7 +151,7 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             val name = queryFileName(uri) ?: "comic_${System.currentTimeMillis()}.cbz"
             _selectedFileName.value = name
-            _beforeBitmap.value = createMangaThumbnailPlaceholder()
+            _beforeBitmap.value = createMangaThumbnailPlaceholder(name)
 
             val detected = if (name.contains("color", true) || name.contains("manhwa", true) || name.contains("webtoon", true)) {
                 "Manga Màu"
@@ -175,8 +182,11 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
                     )
                 )
 
+                val fileName = _selectedFileName.value ?: "input"
+                val ext = if (fileName.contains('.')) fileName.substringAfterLast('.').lowercase() else (if (isZip) "cbz" else "png")
+                val cacheFile = File(appContext.cacheDir, "input_job.$ext")
+
                 // Copy file từ URI vào cache file bằng buffer 64KB an toàn
-                val cacheFile = File(appContext.cacheDir, if (isZip) "input_batch.cbz" else "input_image.png")
                 appContext.contentResolver.openInputStream(uri)?.use { input ->
                     BufferedInputStream(input).use { bis ->
                         FileOutputStream(cacheFile).use { fos ->
@@ -192,9 +202,17 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
                     }
                 }
 
+                val mode = when {
+                    ext == "mobi" || ext == "prc" -> UpscaleWorker.MODE_MOBI_ARCHIVE
+                    isZip || ext == "cbz" || ext == "zip" -> UpscaleWorker.MODE_BATCH_ARCHIVE
+                    else -> UpscaleWorker.MODE_SINGLE_IMAGE
+                }
+
                 val inputData = workDataOf(
-                    UpscaleWorker.KEY_MODE to if (isZip) UpscaleWorker.MODE_BATCH_ARCHIVE else UpscaleWorker.MODE_SINGLE_IMAGE,
+                    UpscaleWorker.KEY_MODE to mode,
                     UpscaleWorker.KEY_INPUT_PATH to cacheFile.absolutePath,
+                    UpscaleWorker.KEY_ORIGINAL_NAME to (_selectedFileName.value ?: "image.png"),
+                    UpscaleWorker.KEY_CUSTOM_OUTPUT_DIR to _customOutputDir.value,
                     UpscaleWorker.KEY_SCALE to _scale.value,
                     UpscaleWorker.KEY_USE_FP16 to _useFp16.value,
                     UpscaleWorker.KEY_FORCE_LOW_RAM to _forceLowRam.value
@@ -242,8 +260,9 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         cancelUpscale()
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                File(appContext.cacheDir, "input_image.png").delete()
-                File(appContext.cacheDir, "input_batch.cbz").delete()
+                appContext.cacheDir.listFiles()?.forEach { file ->
+                    if (file.name.startsWith("input_job")) file.delete()
+                }
             } catch (_: Throwable) {}
             withContext(Dispatchers.Main) {
                 onComplete()
@@ -259,20 +278,20 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val draftsDir = File(appContext.getExternalFilesDir(null) ?: appContext.filesDir, "UpScale_Drafts").apply { mkdirs() }
-                val isZip = _isBatchZip.value
-                val sourceCacheFile = File(appContext.cacheDir, if (isZip) "input_batch.cbz" else "input_image.png")
-                val draftFileName = _selectedFileName.value ?: if (isZip) "draft_batch.cbz" else "draft_image.png"
+                val fileName = _selectedFileName.value ?: "draft_comic.cbz"
+                val ext = if (fileName.contains('.')) fileName.substringAfterLast('.').lowercase() else "cbz"
+                val sourceCacheFile = File(appContext.cacheDir, "input_job.$ext")
 
                 if (sourceCacheFile.exists()) {
-                    val targetDraftFile = File(draftsDir, draftFileName)
+                    val targetDraftFile = File(draftsDir, fileName)
                     sourceCacheFile.copyTo(targetDraftFile, overwrite = true)
                 }
 
                 // Lưu metadata cấu hình draft
                 val metaFile = File(draftsDir, "draft_metadata.txt")
                 metaFile.writeText(
-                    "fileName=$draftFileName\n" +
-                    "isBatchZip=$isZip\n" +
+                    "fileName=$fileName\n" +
+                    "isBatchZip=${_isBatchZip.value}\n" +
                     "preset=${_selectedPreset.value}\n" +
                     "scale=${_scale.value}\n" +
                     "useFp16=${_useFp16.value}\n" +
@@ -397,16 +416,17 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         return BitmapFactory.decodeFile(filePath, decodeOptions)
     }
 
-    private fun createMangaThumbnailPlaceholder(): Bitmap {
+    private fun createMangaThumbnailPlaceholder(name: String): Bitmap {
         val bmp = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(bmp)
         val paint = android.graphics.Paint().apply {
             color = android.graphics.Color.DKGRAY
-            textSize = 28f
+            textSize = 26f
             textAlign = android.graphics.Paint.Align.CENTER
         }
         canvas.drawColor(android.graphics.Color.LTGRAY)
-        canvas.drawText("CBZ / ZIP Comic Book", 200f, 300f, paint)
+        val label = if (name.endsWith(".mobi", true) || name.endsWith(".prc", true)) "MOBI / PRC E-Book" else "CBZ / ZIP Comic Book"
+        canvas.drawText(label, 200f, 300f, paint)
         return bmp
     }
 }

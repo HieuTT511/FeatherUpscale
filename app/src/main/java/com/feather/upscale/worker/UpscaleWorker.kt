@@ -6,9 +6,9 @@ import android.graphics.BitmapFactory
 import android.os.Environment
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import androidx.work.workDataOf
 import com.feather.upscale.TileProcessor
 import com.feather.upscale.batch.BatchZipProcessor
+import com.feather.upscale.batch.MobiProcessor
 import com.feather.upscale.notification.UpscaleNotificationManager
 import com.feather.upscale.util.HapticHelper
 import kotlinx.coroutines.Dispatchers
@@ -16,43 +16,34 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.text.DecimalFormat
-import kotlin.coroutines.cancellation.CancellationException
 
-/**
- * WorkManager CoroutineWorker chạy quá trình Upscale nền (Single Image / Batch ZIP).
- *
- * - Hỗ trợ Live Preview cập nhật ảnh thời gian thực khi tile đang render.
- * - Lưu file mới rõ ràng (không đè file gốc) vào thư mục Pictures/UpScale hoặc Downloads/UpScale.
- * - Hỗ trợ Foreground Service an toàn với notification thanh tiến độ.
- * - Tương tác hai chiều với [UpscaleStateManager] cho phép Pause / Resume / Cancel.
- */
 class UpscaleWorker(
     appContext: Context,
-    params: WorkerParameters,
-) : CoroutineWorker(appContext, params) {
+    workerParams: WorkerParameters
+) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
-        const val KEY_MODE = "key_mode"
-        const val MODE_SINGLE_IMAGE = "mode_single_image"
-        const val MODE_BATCH_ARCHIVE = "mode_batch_archive"
+        const val KEY_INPUT_PATH = "input_path"
+        const val KEY_ORIGINAL_NAME = "original_name"
+        const val KEY_CUSTOM_OUTPUT_DIR = "custom_output_dir"
+        const val KEY_MODE = "mode"
+        const val KEY_SCALE = "scale"
+        const val KEY_USE_FP16 = "use_fp16"
+        const val KEY_FORCE_LOW_RAM = "force_low_ram"
 
-        const val KEY_INPUT_PATH = "key_input_path"
-        const val KEY_OUTPUT_PATH = "key_output_path"
-        const val KEY_SCALE = "key_scale"
-        const val KEY_USE_FP16 = "key_use_fp16"
-        const val KEY_FORCE_LOW_RAM = "key_force_low_ram"
-
-        const val KEY_PROGRESS_PERCENT = "key_progress_percent"
-        const val KEY_RESULT_PATH = "key_result_path"
+        const val MODE_SINGLE_IMAGE = "single_image"
+        const val MODE_BATCH_ARCHIVE = "batch_archive"
+        const val MODE_MOBI_ARCHIVE = "mobi_archive"
     }
 
     private val notificationManager = UpscaleNotificationManager(applicationContext)
     private val hapticHelper = HapticHelper(applicationContext)
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        val inputPath = inputData.getString(KEY_INPUT_PATH) ?: return@withContext Result.failure()
+        val originalName = inputData.getString(KEY_ORIGINAL_NAME) ?: File(inputPath).name
+        val customOutputDir = inputData.getString(KEY_CUSTOM_OUTPUT_DIR)
         val mode = inputData.getString(KEY_MODE) ?: MODE_SINGLE_IMAGE
-        val inputPath = inputData.getString(KEY_INPUT_PATH)
-            ?: return@withContext Result.failure(workDataOf("error" to "Thiếu đường dẫn input"))
         val scale = inputData.getInt(KEY_SCALE, 4)
         val useFp16 = inputData.getBoolean(KEY_USE_FP16, true)
         val forceLowRam = inputData.getBoolean(KEY_FORCE_LOW_RAM, false)
@@ -82,95 +73,165 @@ class UpscaleWorker(
                 useFp16 = useFp16
             )
 
-            if (mode == MODE_BATCH_ARCHIVE) {
-                // Batch ZIP / CBZ mode
+            val baseName = if (originalName.contains('.')) originalName.substringBeforeLast('.') else originalName
+
+            if (mode == MODE_BATCH_ARCHIVE || mode == MODE_MOBI_ARCHIVE) {
                 val inputFile = File(inputPath)
-                val baseDir = applicationContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-                    ?: File(applicationContext.filesDir, "downloads")
-                val targetDir = File(baseDir, "UpScale").apply { mkdirs() }
-                val outputFile = File(targetDir, "${inputFile.nameWithoutExtension}_upscaled_${scale}x.cbz")
+                val isMobi = mode == MODE_MOBI_ARCHIVE ||
+                        inputFile.extension.equals("mobi", true) ||
+                        inputFile.extension.equals("prc", true)
 
-                val batchProcessor = BatchZipProcessor(
-                    tileProcessor = tileProcessor,
-                    hapticHelper = hapticHelper
-                )
+                val targetDir = if (!customOutputDir.isNullOrEmpty()) {
+                    File(customOutputDir).apply { mkdirs() }
+                } else {
+                    val baseDir = applicationContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                        ?: File(applicationContext.filesDir, "downloads")
+                    File(baseDir, "UpScale").apply { mkdirs() }
+                }
 
-                UpscaleStateManager.updateState(
-                    UpscaleState.Processing(
-                        currentPage = 1,
-                        totalPages = 1,
-                        completedTiles = 0,
-                        totalTiles = 1,
-                        currentTileSize = tileProcessor.tileSize,
-                        isLowRam = tileProcessor.isLowRam,
-                        statusMessage = "Đang quét các trang truyện..."
+                val outputFile = File(targetDir, "${baseName}_Upscale_${scale}x.cbz")
+
+                if (isMobi) {
+                    val mobiProcessor = MobiProcessor(
+                        tileProcessor = tileProcessor,
+                        hapticHelper = hapticHelper
                     )
-                )
 
-                batchProcessor.processArchive(
-                    inputFile = inputFile,
-                    outputFile = outputFile,
-                    onProgress = { progress ->
-                        val percent = if (progress.totalPages > 0) {
-                            val pageFraction = 1f / progress.totalPages
-                            val tileFraction = if (progress.totalTiles > 0) progress.currentTile.toFloat() / progress.totalTiles else 0f
-                            (progress.currentPage - 1) * pageFraction + tileFraction * pageFraction
-                        } else 0f
+                    UpscaleStateManager.updateState(
+                        UpscaleState.Processing(
+                            currentPage = 1,
+                            totalPages = 1,
+                            completedTiles = 0,
+                            totalTiles = 1,
+                            currentTileSize = tileProcessor.tileSize,
+                            isLowRam = tileProcessor.isLowRam,
+                            statusMessage = "Đang phân tích cấu trúc truyện MOBI / PRC..."
+                        )
+                    )
 
-                        UpscaleStateManager.updateState(
-                            UpscaleState.Processing(
-                                currentPage = progress.currentPage,
-                                totalPages = progress.totalPages,
-                                completedTiles = progress.currentTile,
-                                totalTiles = progress.totalTiles,
-                                currentTileSize = progress.currentTileSize,
-                                isLowRam = tileProcessor.isLowRam,
-                                progressFraction = percent,
-                                statusMessage = "Trang ${progress.currentPage}/${progress.totalPages} (${progress.pageName})"
+                    mobiProcessor.processMobi(
+                        inputFile = inputFile,
+                        outputFile = outputFile,
+                        onProgress = { progress ->
+                            val percent = if (progress.totalPages > 0) {
+                                val pageFraction = 1f / progress.totalPages
+                                val tileFraction = if (progress.totalTiles > 0) progress.currentTile.toFloat() / progress.totalTiles else 0f
+                                (progress.currentPage - 1) * pageFraction + tileFraction * pageFraction
+                            } else 0f
+
+                            UpscaleStateManager.updateState(
+                                UpscaleState.Processing(
+                                    currentPage = progress.currentPage,
+                                    totalPages = progress.totalPages,
+                                    completedTiles = progress.currentTile,
+                                    totalTiles = progress.totalTiles,
+                                    currentTileSize = progress.currentTileSize,
+                                    isLowRam = tileProcessor.isLowRam,
+                                    progressFraction = percent,
+                                    statusMessage = "Trang ${progress.currentPage}/${progress.totalPages} (MOBI)"
+                                )
                             )
-                        )
 
-                        notificationManager.updateProgress(
-                            pageIndex = progress.currentPage,
-                            totalPages = progress.totalPages,
-                            tileIndex = progress.currentTile,
-                            totalTiles = progress.totalTiles,
-                            isPaused = UpscaleStateManager.isPaused.value,
-                            tileSize = progress.currentTileSize
-                        )
+                            notificationManager.updateProgress(
+                                pageIndex = progress.currentPage,
+                                totalPages = progress.totalPages,
+                                tileIndex = progress.currentTile,
+                                totalTiles = progress.totalTiles,
+                                isPaused = UpscaleStateManager.isPaused.value,
+                                tileSize = progress.currentTileSize
+                            )
+                        },
+                        onPreviewUpdate = { previewBitmap ->
+                            UpscaleStateManager.updateRuntimePreview(previewBitmap)
+                        },
+                        isPaused = { UpscaleStateManager.isPaused.value },
+                        isCancelled = { UpscaleStateManager.isCancelled.value }
+                    )
+                } else {
+                    // Batch ZIP / CBZ mode
+                    val batchProcessor = BatchZipProcessor(
+                        tileProcessor = tileProcessor,
+                        hapticHelper = hapticHelper
+                    )
 
-                        setProgressAsync(workDataOf(KEY_PROGRESS_PERCENT to (percent * 100).toInt()))
-                    },
-                    isPaused = { isStopped || UpscaleStateManager.isPaused.value },
-                    isCancelled = { isStopped || UpscaleStateManager.isCancelled.value }
-                )
+                    UpscaleStateManager.updateState(
+                        UpscaleState.Processing(
+                            currentPage = 1,
+                            totalPages = 1,
+                            completedTiles = 0,
+                            totalTiles = 1,
+                            currentTileSize = tileProcessor.tileSize,
+                            isLowRam = tileProcessor.isLowRam,
+                            statusMessage = "Đang quét các trang truyện..."
+                        )
+                    )
+
+                    batchProcessor.processArchive(
+                        inputFile = inputFile,
+                        outputFile = outputFile,
+                        onProgress = { progress ->
+                            val percent = if (progress.totalPages > 0) {
+                                val pageFraction = 1f / progress.totalPages
+                                val tileFraction = if (progress.totalTiles > 0) progress.currentTile.toFloat() / progress.totalTiles else 0f
+                                (progress.currentPage - 1) * pageFraction + tileFraction * pageFraction
+                            } else 0f
+
+                            UpscaleStateManager.updateState(
+                                UpscaleState.Processing(
+                                    currentPage = progress.currentPage,
+                                    totalPages = progress.totalPages,
+                                    completedTiles = progress.currentTile,
+                                    totalTiles = progress.totalTiles,
+                                    currentTileSize = progress.currentTileSize,
+                                    isLowRam = tileProcessor.isLowRam,
+                                    progressFraction = percent,
+                                    statusMessage = "Trang ${progress.currentPage}/${progress.totalPages} (${progress.pageName})"
+                                )
+                            )
+
+                            notificationManager.updateProgress(
+                                pageIndex = progress.currentPage,
+                                totalPages = progress.totalPages,
+                                tileIndex = progress.currentTile,
+                                totalTiles = progress.totalTiles,
+                                isPaused = UpscaleStateManager.isPaused.value,
+                                tileSize = progress.currentTileSize
+                            )
+                        },
+                        onPreviewUpdate = { previewBitmap ->
+                            UpscaleStateManager.updateRuntimePreview(previewBitmap)
+                        },
+                        isPaused = { UpscaleStateManager.isPaused.value },
+                        isCancelled = { UpscaleStateManager.isCancelled.value }
+                    )
+                }
 
                 val duration = System.currentTimeMillis() - startTime
-                val fileSizeFormatted = formatFileSize(outputFile.length())
+                val fileSizeStr = formatFileSize(outputFile.length())
+
                 UpscaleStateManager.updateState(
                     UpscaleState.Completed(
-                        totalPages = 1,
-                        totalDurationMs = duration,
                         outputPath = outputFile.absolutePath,
+                        totalDurationMs = duration,
                         outputFileName = outputFile.name,
-                        outputResolution = "Batch Comic Book (${scale}X)",
-                        outputFileSize = fileSizeFormatted,
-                        isNewFile = true
+                        outputFileSize = fileSizeStr,
+                        outputResolution = "Tập Truyện CBZ Siêu Nét"
                     )
                 )
 
-                return@withContext Result.success(workDataOf(KEY_RESULT_PATH to outputFile.absolutePath))
+                notificationManager.showCompleted(
+                    outputFileName = outputFile.name,
+                    durationMs = duration
+                )
 
             } else {
                 // Single Image Mode
                 val inputFile = File(inputPath)
-                val originalBitmap = decodeSafeBitmapFromFile(inputPath)
-                    ?: return@withContext Result.failure(workDataOf("error" to "Không giải mã được ảnh $inputPath"))
-
-                val baseDir = applicationContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-                    ?: File(applicationContext.filesDir, "pictures")
-                val targetDir = File(baseDir, "UpScale").apply { mkdirs() }
-                val outputFile = File(targetDir, "${inputFile.nameWithoutExtension}_upscaled_${scale}x.png")
+                val options = BitmapFactory.Options().apply {
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                val inputBitmap = BitmapFactory.decodeFile(inputFile.absolutePath, options)
+                    ?: return@withContext Result.failure()
 
                 UpscaleStateManager.updateState(
                     UpscaleState.Processing(
@@ -180,14 +241,14 @@ class UpscaleWorker(
                         totalTiles = 1,
                         currentTileSize = tileProcessor.tileSize,
                         isLowRam = tileProcessor.isLowRam,
-                        statusMessage = "Đang chia tile..."
+                        statusMessage = "Bắt đầu upscale AI Real-ESRGAN..."
                     )
                 )
 
-                val upscaled = tileProcessor.process(
-                    bitmap = originalBitmap,
+                val upscaledBitmap = tileProcessor.process(
+                    bitmap = inputBitmap,
                     onProgress = { currentTile, totalTiles ->
-                        val fraction = if (totalTiles > 0) currentTile.toFloat() / totalTiles else 0f
+                        val progressFraction = if (totalTiles > 0) currentTile.toFloat() / totalTiles else 0f
                         UpscaleStateManager.updateState(
                             UpscaleState.Processing(
                                 currentPage = 1,
@@ -196,10 +257,11 @@ class UpscaleWorker(
                                 totalTiles = totalTiles,
                                 currentTileSize = tileProcessor.tileSize,
                                 isLowRam = tileProcessor.isLowRam,
-                                progressFraction = fraction,
-                                statusMessage = "Tile $currentTile/$totalTiles (${(fraction * 100).toInt()}%)"
+                                progressFraction = progressFraction,
+                                statusMessage = "Tile $currentTile/$totalTiles (${(progressFraction * 100).toInt()}%)"
                             )
                         )
+
                         notificationManager.updateProgress(
                             pageIndex = 1,
                             totalPages = 1,
@@ -208,90 +270,84 @@ class UpscaleWorker(
                             isPaused = UpscaleStateManager.isPaused.value,
                             tileSize = tileProcessor.tileSize
                         )
-                        setProgressAsync(workDataOf(KEY_PROGRESS_PERCENT to (fraction * 100).toInt()))
                     },
-                    onPreviewUpdate = { previewBmp ->
-                        // Cập nhật trực tiếp ảnh Preview thời gian thực vào Slider!
-                        UpscaleStateManager.updateRuntimePreview(previewBmp)
+                    onPreviewUpdate = { previewBitmap ->
+                        UpscaleStateManager.updateRuntimePreview(previewBitmap)
                     },
-                    isPaused = { isStopped || UpscaleStateManager.isPaused.value },
-                    isCancelled = { isStopped || UpscaleStateManager.isCancelled.value }
+                    isPaused = { UpscaleStateManager.isPaused.value },
+                    isCancelled = { UpscaleStateManager.isCancelled.value }
                 )
 
-                val outW = upscaled.width
-                val outH = upscaled.height
-
-                originalBitmap.recycle()
-
-                // Lưu ảnh đầu ra vào file mới
-                FileOutputStream(outputFile).use { fos ->
-                    upscaled.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                val targetDir = if (!customOutputDir.isNullOrEmpty()) {
+                    File(customOutputDir).apply { mkdirs() }
+                } else {
+                    val baseDir = applicationContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+                        ?: File(applicationContext.filesDir, "pictures")
+                    File(baseDir, "UpScale").apply { mkdirs() }
                 }
-                upscaled.recycle()
 
-                hapticHelper.vibratePageComplete()
+                val outputFile = File(targetDir, "${baseName}_Upscale_${scale}x.png")
+
+                val outStream = FileOutputStream(outputFile)
+                upscaledBitmap.compress(Bitmap.CompressFormat.PNG, 100, outStream)
+                outStream.flush()
+                outStream.close()
 
                 val duration = System.currentTimeMillis() - startTime
-                val fileSizeFormatted = formatFileSize(outputFile.length())
-                val resolutionStr = "${outW}x${outH}" + if (outW >= 3840 || outH >= 3840) " (4K UHD)" else ""
+                val fileSizeStr = formatFileSize(outputFile.length())
+                val resolutionStr = "${upscaledBitmap.width} x ${upscaledBitmap.height} px"
+
+                upscaledBitmap.recycle()
+                inputBitmap.recycle()
+
+                hapticHelper.vibrateBatchComplete()
 
                 UpscaleStateManager.updateState(
                     UpscaleState.Completed(
-                        totalPages = 1,
-                        totalDurationMs = duration,
                         outputPath = outputFile.absolutePath,
+                        totalDurationMs = duration,
                         outputFileName = outputFile.name,
-                        outputResolution = resolutionStr,
-                        outputFileSize = fileSizeFormatted,
-                        isNewFile = true
+                        outputFileSize = fileSizeStr,
+                        outputResolution = resolutionStr
                     )
                 )
 
-                return@withContext Result.success(workDataOf(KEY_RESULT_PATH to outputFile.absolutePath))
+                notificationManager.showCompleted(
+                    outputFileName = outputFile.name,
+                    durationMs = duration
+                )
             }
 
-        } catch (e: CancellationException) {
-            UpscaleStateManager.updateState(UpscaleState.Cancelled)
-            notificationManager.dismiss()
-            return@withContext Result.failure(workDataOf("error" to "Quá trình bị hủy"))
+            Result.success()
+
         } catch (e: OutOfMemoryError) {
-            hapticHelper.vibrateError()
-            UpscaleStateManager.updateState(UpscaleState.Error("Thiếu bộ nhớ RAM (OOM). Hãy bật chế độ Low-RAM 128px.", isOom = true))
-            notificationManager.dismiss()
-            return@withContext Result.failure(workDataOf("error" to "OutOfMemoryError: ${e.message}"))
+            UpscaleStateManager.updateState(
+                UpscaleState.Error(
+                    message = "Tràn bộ nhớ RAM. Vui lòng bật chế độ 'OOM Guard' để tự động hạ tile size xuống 128px.",
+                    isOom = true
+                )
+            )
+            Result.failure()
         } catch (e: Throwable) {
-            hapticHelper.vibrateError()
-            UpscaleStateManager.updateState(UpscaleState.Error("Lỗi: ${e.localizedMessage ?: e.message}"))
-            notificationManager.dismiss()
-            return@withContext Result.failure(workDataOf("error" to (e.message ?: "Unknown error")))
-        } finally {
-            notificationManager.dismiss()
+            val isCancelled = UpscaleStateManager.isCancelled.value
+            if (!isCancelled) {
+                val isOom = e.message?.contains("Out of memory", true) == true
+                UpscaleStateManager.updateState(
+                    UpscaleState.Error(
+                        message = e.localizedMessage ?: e.message ?: "Lỗi không xác định khi upscale",
+                        isOom = isOom
+                    )
+                )
+            }
+            Result.failure()
         }
     }
 
-    private fun decodeSafeBitmapFromFile(path: String, maxDimension: Int = 4096): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-
-        val maxDim = maxOf(bounds.outWidth, bounds.outHeight)
-        var sampleSize = 1
-        while (maxDim / sampleSize > maxDimension) {
-            sampleSize *= 2
-        }
-
-        val decodeOptions = BitmapFactory.Options().apply {
-            inSampleSize = sampleSize
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }
-        return BitmapFactory.decodeFile(path, decodeOptions)
-    }
-
-    private fun formatFileSize(bytes: Long): String {
-        if (bytes <= 0) return "0 B"
+    private fun formatFileSize(sizeInBytes: Long): String {
+        if (sizeInBytes <= 0) return "0 B"
         val units = arrayOf("B", "KB", "MB", "GB")
-        val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.size - 1)
-        val df = DecimalFormat("#,##0.#")
-        return "${df.format(bytes / Math.pow(1024.0, digitGroups.toDouble()))} ${units[digitGroups]}"
+        val digitGroups = (Math.log10(sizeInBytes.toDouble()) / Math.log10(1024.0)).toInt()
+        val format = DecimalFormat("#,##0.#")
+        return "${format.format(sizeInBytes / Math.pow(1024.0, digitGroups.toDouble()))} ${units[digitGroups]}"
     }
 }

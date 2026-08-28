@@ -117,6 +117,7 @@ fun UpscaleScreen(
     val context = LocalContext.current
     val selectedUri by viewModel.selectedUri.collectAsState()
     val selectedFileName by viewModel.selectedFileName.collectAsState()
+    val customOutputDir by viewModel.customOutputDir.collectAsState()
     val isBatchZip by viewModel.isBatchZip.collectAsState()
     val beforeBitmap by viewModel.beforeBitmap.collectAsState()
     val afterBitmap by viewModel.afterBitmap.collectAsState()
@@ -141,7 +142,15 @@ fun UpscaleScreen(
     val zipPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
-        if (uri != null) viewModel.onZipSelected(uri)
+        if (uri != null) viewModel.onComicSelected(uri)
+    }
+
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.setCustomOutputDir(uri.lastPathSegment ?: uri.path)
+        }
     }
 
     val isProcessing = upscaleState is UpscaleState.Processing
@@ -395,10 +404,18 @@ fun UpscaleScreen(
                     }
                 }
 
-                // Card 2: Chọn Batch ZIP/CBZ
+                // Card 2: Chọn Tập Truyện / Sách (ZIP / CBZ / MOBI / PRC)
                 Card(
                     onClick = {
-                        zipPickerLauncher.launch(arrayOf("application/zip", "application/x-cbz", "application/octet-stream"))
+                        zipPickerLauncher.launch(
+                            arrayOf(
+                                "application/zip",
+                                "application/x-cbz",
+                                "application/x-mobipocket-ebook",
+                                "application/octet-stream",
+                                "*/*"
+                            )
+                        )
                     },
                     modifier = Modifier.weight(1f),
                     enabled = !isProcessing && !isPaused,
@@ -432,12 +449,12 @@ fun UpscaleScreen(
                             }
                         }
                         Text(
-                            text = "Batch ZIP / CBZ",
+                            text = "Tập Truyện / Sách",
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.bodyLarge
                         )
                         Text(
-                            text = "Nguyên tập truyện",
+                            text = "ZIP, CBZ, MOBI, PRC",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
@@ -473,7 +490,12 @@ fun UpscaleScreen(
                                 maxLines = 1
                             )
                             Text(
-                                text = if (isBatchZip) "Tập tin nén truyện tranh" else "Đã nạp vào bộ nhớ đệm",
+                                text = if (selectedFileName?.endsWith(".mobi", true) == true || selectedFileName?.endsWith(".prc", true) == true)
+                                    "Sách truyện MOBI / PRC (PalmDOC)"
+                                else if (isBatchZip)
+                                    "Tập tin nén truyện tranh (CBZ / ZIP)"
+                                else
+                                    "Đã nạp vào bộ nhớ đệm",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp
@@ -664,6 +686,46 @@ fun UpscaleScreen(
                             enabled = !isProcessing && !isPaused,
                             colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = EmeraldGpu)
                         )
+                    }
+
+                    // Thư mục lưu đầu ra tùy chọn
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(imageVector = Icons.Default.Folder, contentDescription = null, tint = VioletPrimaryLight, modifier = Modifier.size(18.dp))
+                                Text("Thư mục lưu đầu ra", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            Text(
+                                text = customOutputDir?.let { "Tùy chỉnh: $it" } ?: "Mặc định (Pictures / Download/UpScale)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (customOutputDir != null) CyanAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (customOutputDir != null) {
+                                OutlinedButton(
+                                    onClick = { viewModel.setCustomOutputDir(null) },
+                                    enabled = !isProcessing && !isPaused,
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("Đặt lại", fontSize = 11.sp, color = RoseError)
+                                }
+                            }
+                            Button(
+                                onClick = { folderPickerLauncher.launch(null) },
+                                enabled = !isProcessing && !isPaused,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = VioletPrimary.copy(alpha = 0.8f))
+                            ) {
+                                Text("Chọn", fontSize = 11.sp)
+                            }
+                        }
                     }
                 }
             }
@@ -946,39 +1008,89 @@ fun UpscaleScreen(
                 }
             }
 
-            // 6. Nút Bắt Đầu Upscale Lớn (Hero Action CTA)
-            Button(
-                onClick = { viewModel.startUpscale() },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(58.dp)
-                    .shadow(elevation = 12.dp, shape = RoundedCornerShape(18.dp), ambientColor = VioletPrimary, spotColor = VioletPrimary),
-                shape = RoundedCornerShape(18.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = VioletPrimary,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
-                ),
-                enabled = selectedUri != null && !isProcessing && !isPaused
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+            // 6. Nút Hành Động Thích Ứng Thông Minh (Adaptive Action CTA)
+            if (upscaleState is UpscaleState.Completed) {
+                val completedState = upscaleState as UpscaleState.Completed
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = { openFile(context, completedState.outputPath) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .shadow(elevation = 10.dp, shape = RoundedCornerShape(18.dp), ambientColor = EmeraldGpu, spotColor = EmeraldGpu),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldGpu)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Visibility, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+                            Text(
+                                text = if (isBatchZip) "MỞ TẬP TRUYỆN ĐÃ UPSCALE" else "XEM ẢNH ĐÃ UPSCALE (4K UHD)",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 15.sp,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { viewModel.reset() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = VioletPrimaryLight),
+                        border = BorderStroke(1.5.dp, VioletPrimary.copy(alpha = 0.6f))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Text(
+                                text = "UPSCALE TỆP KHÁC",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+            } else {
+                Button(
+                    onClick = { viewModel.startUpscale() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(58.dp)
+                        .shadow(elevation = 12.dp, shape = RoundedCornerShape(18.dp), ambientColor = VioletPrimary, spotColor = VioletPrimary),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = VioletPrimary,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    enabled = selectedUri != null && !isProcessing && !isPaused
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Text(
-                        text = if (isBatchZip)
-                            "BẮT ĐẦU UPSCALE BATCH TRUYỆN (${scale}X)"
-                        else
-                            "BẮT ĐẦU UPSCALE ẢNH (${scale}X)",
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 16.sp,
-                        letterSpacing = 0.5.sp
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = if (isBatchZip)
+                                "BẮT ĐẦU UPSCALE TẬP TRUYỆN (${scale}X)"
+                            else
+                                "BẮT ĐẦU UPSCALE ẢNH (${scale}X)",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
                 }
             }
 

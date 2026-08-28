@@ -12,8 +12,8 @@ android {
         applicationId = "com.feather.upscale"
         minSdk = 26
         targetSdk = 35
-        versionCode = 105
-        versionName = "1.0.5"
+        versionCode = 120
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
