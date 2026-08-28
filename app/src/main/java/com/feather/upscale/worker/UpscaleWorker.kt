@@ -11,6 +11,7 @@ import com.feather.upscale.batch.MobiProcessor
 import com.feather.upscale.notification.UpscaleNotificationManager
 import com.feather.upscale.util.HapticHelper
 import com.feather.upscale.util.StorageHelper
+import com.feather.upscale.video.VideoProcessor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -33,6 +34,7 @@ class UpscaleWorker(
         const val MODE_SINGLE_IMAGE = "single_image"
         const val MODE_BATCH_ARCHIVE = "batch_archive"
         const val MODE_MOBI_ARCHIVE = "mobi_archive"
+        const val MODE_VIDEO = "video"
     }
 
     private val notificationManager = UpscaleNotificationManager(applicationContext)
@@ -74,7 +76,106 @@ class UpscaleWorker(
 
             val baseName = if (originalName.contains('.')) originalName.substringBeforeLast('.') else originalName
 
-            if (mode == MODE_BATCH_ARCHIVE || mode == MODE_MOBI_ARCHIVE) {
+            if (mode == MODE_VIDEO || VideoProcessor.isVideoFile(originalName)) {
+                // ==========================================
+                // 1. VIDEO SUPER-RESOLUTION MODE
+                // ==========================================
+                val inputFile = File(inputPath)
+                val tempOutputFile = File(applicationContext.cacheDir, "temp_video_${System.currentTimeMillis()}.mp4")
+                val videoProcessor = VideoProcessor(
+                    context = applicationContext,
+                    tileProcessor = tileProcessor,
+                    hapticHelper = hapticHelper
+                )
+
+                UpscaleStateManager.updateState(
+                    UpscaleState.Processing(
+                        currentPage = 1,
+                        totalPages = 1,
+                        completedTiles = 0,
+                        totalTiles = 1,
+                        currentTileSize = tileProcessor.tileSize,
+                        isLowRam = tileProcessor.isLowRam,
+                        statusMessage = "Đang khởi tạo bộ giải mã video AI..."
+                    )
+                )
+
+                videoProcessor.processVideo(
+                    inputFile = inputFile,
+                    outputFile = tempOutputFile,
+                    onProgress = { progress ->
+                        UpscaleStateManager.updateState(
+                            UpscaleState.Processing(
+                                currentPage = progress.currentFrame,
+                                totalPages = progress.totalFrames,
+                                completedTiles = progress.currentFrame,
+                                totalTiles = progress.totalFrames,
+                                currentTileSize = tileProcessor.tileSize,
+                                isLowRam = tileProcessor.isLowRam,
+                                progressFraction = progress.progressFraction,
+                                statusMessage = progress.statusMessage
+                            )
+                        )
+
+                        notificationManager.updateProgress(
+                            pageIndex = progress.currentFrame,
+                            totalPages = progress.totalFrames,
+                            tileIndex = progress.currentFrame,
+                            totalTiles = progress.totalFrames,
+                            isPaused = UpscaleStateManager.isPaused.value,
+                            tileSize = tileProcessor.tileSize
+                        )
+                    },
+                    onPreviewUpdate = { frameBitmap ->
+                        UpscaleStateManager.updateRuntimePreview(frameBitmap)
+                    },
+                    isPaused = { UpscaleStateManager.isPaused.value },
+                    isCancelled = { UpscaleStateManager.isCancelled.value }
+                )
+
+                val outTarget = StorageHelper.createOutputFileStream(
+                    context = applicationContext,
+                    customOutputDirUriStr = customOutputDir,
+                    fileName = "${baseName}_Upscale_${scale}x.mp4",
+                    mimeType = "video/mp4",
+                    isComicOrMobi = false
+                )
+
+                tempOutputFile.inputStream().use { input ->
+                    outTarget.outputStream.use { output ->
+                        input.copyTo(output)
+                        output.flush()
+                    }
+                }
+
+                val fileSizeStr = formatFileSize(tempOutputFile.length())
+                tempOutputFile.delete()
+
+                StorageHelper.scanMediaFile(applicationContext, outTarget, "video/mp4")
+
+                val duration = System.currentTimeMillis() - startTime
+
+                UpscaleStateManager.updateState(
+                    UpscaleState.Completed(
+                        outputPath = outTarget.absolutePath,
+                        outputDirectory = outTarget.displayDirectory,
+                        totalDurationMs = duration,
+                        outputFileName = "${baseName}_Upscale_${scale}x.mp4",
+                        outputFileSize = fileSizeStr,
+                        outputResolution = "Video Super-Resolution (${scale}X)",
+                        isVerified = true
+                    )
+                )
+
+                notificationManager.showCompleted(
+                    outputFileName = "${baseName}_Upscale_${scale}x.mp4",
+                    durationMs = duration
+                )
+
+            } else if (mode == MODE_BATCH_ARCHIVE || mode == MODE_MOBI_ARCHIVE) {
+                // ==========================================
+                // 2. COMIC CBZ / MOBI BATCH ARCHIVE MODE
+                // ==========================================
                 val inputFile = File(inputPath)
                 val isMobi = mode == MODE_MOBI_ARCHIVE ||
                         inputFile.extension.equals("mobi", true) ||
@@ -238,7 +339,9 @@ class UpscaleWorker(
                 )
 
             } else {
-                // Single Image Mode
+                // ==========================================
+                // 3. SINGLE IMAGE MODE
+                // ==========================================
                 val inputFile = File(inputPath)
                 val options = BitmapFactory.Options().apply {
                     inPreferredConfig = Bitmap.Config.ARGB_8888

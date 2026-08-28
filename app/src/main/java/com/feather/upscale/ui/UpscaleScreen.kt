@@ -102,6 +102,7 @@ import androidx.core.content.FileProvider
 import com.feather.upscale.ui.theme.AmberWarning
 import com.feather.upscale.ui.theme.CyanAccent
 import com.feather.upscale.ui.theme.EmeraldGpu
+import com.feather.upscale.ui.theme.EmeraldGpuLight
 import com.feather.upscale.ui.theme.RoseError
 import com.feather.upscale.ui.theme.VioletPrimary
 import com.feather.upscale.ui.theme.VioletPrimaryLight
@@ -120,6 +121,7 @@ fun UpscaleScreen(
     val selectedFileName by viewModel.selectedFileName.collectAsState()
     val customOutputDir by viewModel.customOutputDir.collectAsState()
     val isBatchZip by viewModel.isBatchZip.collectAsState()
+    val isVideo by viewModel.isVideo.collectAsState()
     val beforeBitmap by viewModel.beforeBitmap.collectAsState()
     val afterBitmap by viewModel.afterBitmap.collectAsState()
     val selectedPreset by viewModel.selectedPreset.collectAsState()
@@ -144,6 +146,12 @@ fun UpscaleScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) viewModel.onComicSelected(uri)
+    }
+
+    val videoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.onVideoSelected(uri)
     }
 
     val folderPickerLauncher = rememberLauncherForActivityResult(
@@ -352,10 +360,10 @@ fun UpscaleScreen(
                 scaleFactor = scale
             )
 
-            // 2. Thẻ Chọn Nguồn Ảnh / Truyện (Glassmorphic Deck)
+            // 2. Thẻ Chọn Nguồn Ảnh / Truyện / Video (Glassmorphic Deck)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // Card 1: Chọn 1 ảnh
                 Card(
@@ -366,45 +374,45 @@ fun UpscaleScreen(
                     },
                     modifier = Modifier.weight(1f),
                     enabled = !isProcessing && !isPaused,
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (selectedUri != null && !isBatchZip)
+                        containerColor = if (selectedUri != null && !isBatchZip && !isVideo)
                             VioletPrimary.copy(alpha = 0.15f)
                         else MaterialTheme.colorScheme.surfaceVariant
                     ),
                     border = BorderStroke(
                         1.dp,
-                        if (selectedUri != null && !isBatchZip) VioletPrimary else Color.Transparent
+                        if (selectedUri != null && !isBatchZip && !isVideo) VioletPrimary else Color.Transparent
                     )
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Surface(
                             shape = CircleShape,
                             color = VioletPrimary.copy(alpha = 0.2f),
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.Image,
                                     contentDescription = null,
                                     tint = VioletPrimaryLight,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
                         Text(
                             text = "Ảnh Đơn",
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyLarge
+                            style = MaterialTheme.typography.bodyMedium
                         )
                         Text(
                             text = "JPG, PNG, WebP",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp
+                            fontSize = 10.sp
                         )
                     }
                 }
@@ -424,7 +432,7 @@ fun UpscaleScreen(
                     },
                     modifier = Modifier.weight(1f),
                     enabled = !isProcessing && !isPaused,
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = if (selectedUri != null && isBatchZip)
                             CyanAccent.copy(alpha = 0.15f)
@@ -436,33 +444,85 @@ fun UpscaleScreen(
                     )
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Surface(
                             shape = CircleShape,
                             color = CyanAccent.copy(alpha = 0.2f),
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.FolderZip,
                                     contentDescription = null,
                                     tint = CyanAccent,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
                         Text(
-                            text = "Tập Truyện / Sách",
+                            text = "Tập Truyện",
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyLarge
+                            style = MaterialTheme.typography.bodyMedium
                         )
                         Text(
-                            text = "ZIP, CBZ, MOBI, PRC",
+                            text = "CBZ, MOBI, ZIP",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+
+                // Card 3: Chọn Video AI
+                Card(
+                    onClick = {
+                        videoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isProcessing && !isPaused,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (selectedUri != null && isVideo)
+                            EmeraldGpu.copy(alpha = 0.15f)
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    border = BorderStroke(
+                        1.dp,
+                        if (selectedUri != null && isVideo) EmeraldGpu else Color.Transparent
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = EmeraldGpu.copy(alpha = 0.2f),
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    tint = EmeraldGpuLight,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "Video AI",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "MP4, MKV, WebM",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.sp
                         )
                     }
                 }
@@ -482,9 +542,17 @@ fun UpscaleScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Icon(
-                            imageVector = if (isBatchZip) Icons.Default.FolderZip else Icons.Default.Image,
+                            imageVector = when {
+                                isVideo -> Icons.Default.PlayArrow
+                                isBatchZip -> Icons.Default.FolderZip
+                                else -> Icons.Default.Image
+                            },
                             contentDescription = null,
-                            tint = if (isBatchZip) CyanAccent else VioletPrimaryLight,
+                            tint = when {
+                                isVideo -> EmeraldGpu
+                                isBatchZip -> CyanAccent
+                                else -> VioletPrimaryLight
+                            },
                             modifier = Modifier.size(22.dp)
                         )
                         Column(modifier = Modifier.weight(1f)) {
@@ -495,12 +563,12 @@ fun UpscaleScreen(
                                 maxLines = 1
                             )
                             Text(
-                                text = if (selectedFileName?.endsWith(".mobi", true) == true || selectedFileName?.endsWith(".prc", true) == true)
-                                    "Sách truyện MOBI / PRC (PalmDOC)"
-                                else if (isBatchZip)
-                                    "Tập tin nén truyện tranh (CBZ / ZIP)"
-                                else
-                                    "Đã nạp vào bộ nhớ đệm",
+                                text = when {
+                                    isVideo -> "Video Siêu Phân Giải AI (Bảo toàn âm thanh gốc)"
+                                    selectedFileName?.endsWith(".mobi", true) == true || selectedFileName?.endsWith(".prc", true) == true -> "Sách truyện MOBI / PRC (PalmDOC)"
+                                    isBatchZip -> "Tập tin nén truyện tranh (CBZ / ZIP)"
+                                    else -> "Đã nạp vào bộ nhớ đệm"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp
@@ -1156,7 +1224,11 @@ private fun openFile(context: Context, filePath: String?) {
     if (filePath.startsWith("content://")) {
         try {
             val uri = Uri.parse(filePath)
-            val mimeType = if (filePath.contains(".cbz", true) || filePath.contains(".zip", true)) "application/zip" else "image/*"
+            val mimeType = when {
+                filePath.contains(".mp4", true) || filePath.contains(".mkv", true) -> "video/*"
+                filePath.contains(".cbz", true) || filePath.contains(".zip", true) -> "application/zip"
+                else -> "image/*"
+            }
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, mimeType)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -1180,10 +1252,10 @@ private fun openFile(context: Context, filePath: String?) {
     if (!file.exists()) return
     try {
         val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", file)
-        val mimeType = if (file.extension.equals("cbz", true) || file.extension.equals("zip", true)) {
-            "application/zip"
-        } else {
-            "image/*"
+        val mimeType = when {
+            file.extension.equals("mp4", true) || file.extension.equals("mkv", true) -> "video/*"
+            file.extension.equals("cbz", true) || file.extension.equals("zip", true) -> "application/zip"
+            else -> "image/*"
         }
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mimeType)
@@ -1219,18 +1291,20 @@ private fun openFolder(context: Context, dirPath: String?, filePath: String?) {
         } catch (_: Throwable) {}
     }
 
-    // 2. Mở trình quản lý thư viện / bộ sưu tập ảnh của thiết bị
+    // 2. Mở trình quản lý thư viện / bộ sưu tập ảnh/video của thiết bị
     try {
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            val picturesUri = Uri.parse("content://media/external/images/media")
-            setDataAndType(picturesUri, "vnd.android.cursor.dir/image")
+            val isVid = filePath?.endsWith(".mp4", true) == true || filePath?.endsWith(".mkv", true) == true
+            val mediaUri = if (isVid) Uri.parse("content://media/external/video/media") else Uri.parse("content://media/external/images/media")
+            val mime = if (isVid) "vnd.android.cursor.dir/video" else "vnd.android.cursor.dir/image"
+            setDataAndType(mediaUri, mime)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(Intent.createChooser(intent, "Mở thư mục ảnh UpScale"))
+        context.startActivity(Intent.createChooser(intent, "Mở thư mục UpScale"))
         return
     } catch (_: Throwable) {}
 
-    // 3. Fallback: Mở trực tiếp tệp kết quả bằng trình xem ảnh mặc định
+    // 3. Fallback: Mở trực tiếp tệp kết quả bằng trình xem mặc định
     if (filePath != null) {
         openFile(context, filePath)
     }
@@ -1244,7 +1318,11 @@ private fun shareFile(context: Context, filePath: String?) {
     if (filePath.startsWith("content://")) {
         try {
             val uri = Uri.parse(filePath)
-            val mimeType = if (filePath.contains(".cbz", true) || filePath.contains(".zip", true)) "application/zip" else "image/png"
+            val mimeType = when {
+                filePath.contains(".mp4", true) || filePath.contains(".mkv", true) -> "video/mp4"
+                filePath.contains(".cbz", true) || filePath.contains(".zip", true) -> "application/zip"
+                else -> "image/png"
+            }
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = mimeType
                 putExtra(Intent.EXTRA_STREAM, uri)
@@ -1259,10 +1337,10 @@ private fun shareFile(context: Context, filePath: String?) {
     if (!file.exists()) return
     try {
         val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", file)
-        val mimeType = if (file.extension.equals("cbz", true) || file.extension.equals("zip", true)) {
-            "application/zip"
-        } else {
-            "image/png"
+        val mimeType = when {
+            file.extension.equals("mp4", true) || file.extension.equals("mkv", true) -> "video/mp4"
+            file.extension.equals("cbz", true) || file.extension.equals("zip", true) -> "application/zip"
+            else -> "image/png"
         }
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = mimeType

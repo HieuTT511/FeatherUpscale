@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
@@ -13,6 +14,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.feather.upscale.video.VideoProcessor
 import com.feather.upscale.worker.UpscaleState
 import com.feather.upscale.worker.UpscaleStateManager
 import com.feather.upscale.worker.UpscaleWorker
@@ -43,6 +45,9 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
     private val _isBatchZip = MutableStateFlow(false)
     val isBatchZip: StateFlow<Boolean> = _isBatchZip.asStateFlow()
 
+    private val _isVideo = MutableStateFlow(false)
+    val isVideo: StateFlow<Boolean> = _isVideo.asStateFlow()
+
     private val _beforeBitmap = MutableStateFlow<Bitmap?>(null)
     val beforeBitmap: StateFlow<Bitmap?> = _beforeBitmap.asStateFlow()
 
@@ -72,7 +77,7 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
     val upscaleState: StateFlow<UpscaleState> = UpscaleStateManager.state
 
     init {
-        // 1. Lắng nghe runtime preview thời gian thực khi đang render từng tile
+        // 1. Lắng nghe runtime preview thời gian thực khi đang render từng frame / tile
         viewModelScope.launch {
             UpscaleStateManager.runtimePreview.collect { previewBmp ->
                 if (previewBmp != null) {
@@ -81,12 +86,12 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // 2. Lắng nghe trạng thái hoàn tất để nạp ảnh kết quả sắc nét hoàn chỉnh
+        // 2. Lắng nghe trạng thái hoàn tất để nạp ảnh kết quả
         viewModelScope.launch {
             UpscaleStateManager.state.collect { state ->
                 if (state is UpscaleState.Completed) {
                     val outPath = state.outputPath
-                    if (outPath != null && File(outPath).exists() && !_isBatchZip.value) {
+                    if (outPath != null && File(outPath).exists() && !_isBatchZip.value && !_isVideo.value) {
                         try {
                             _afterBitmap.value = decodeSampledPreviewFromFile(outPath, 2400)
                         } catch (_: Throwable) {}
@@ -120,6 +125,7 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
     fun onImageSelected(uri: Uri) {
         _selectedUri.value = uri
         _isBatchZip.value = false
+        _isVideo.value = false
         _afterBitmap.value = null
         UpscaleStateManager.reset()
 
@@ -145,6 +151,7 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
     fun onComicSelected(uri: Uri) {
         _selectedUri.value = uri
         _isBatchZip.value = true
+        _isVideo.value = false
         _afterBitmap.value = null
         UpscaleStateManager.reset()
 
@@ -163,9 +170,29 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun onVideoSelected(uri: Uri) {
+        _selectedUri.value = uri
+        _isBatchZip.value = false
+        _isVideo.value = true
+        _afterBitmap.value = null
+        UpscaleStateManager.reset()
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val name = queryFileName(uri) ?: "video_${System.currentTimeMillis()}.mp4"
+            _selectedFileName.value = name
+
+            val frame = extractVideoThumbnail(uri)
+            _beforeBitmap.value = frame ?: createVideoThumbnailPlaceholder(name)
+
+            _selectedPreset.value = "Anime Video"
+            _isAutoDetected.value = true
+        }
+    }
+
     fun startUpscale() {
         val uri = _selectedUri.value ?: return
         val isZip = _isBatchZip.value
+        val isVid = _isVideo.value
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -183,7 +210,7 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
                 )
 
                 val fileName = _selectedFileName.value ?: "input"
-                val ext = if (fileName.contains('.')) fileName.substringAfterLast('.').lowercase() else (if (isZip) "cbz" else "png")
+                val ext = if (fileName.contains('.')) fileName.substringAfterLast('.').lowercase() else (if (isVid) "mp4" else if (isZip) "cbz" else "png")
                 val cacheFile = File(appContext.cacheDir, "input_job.$ext")
 
                 // Copy file từ URI vào cache file bằng buffer 64KB an toàn
@@ -203,6 +230,7 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
                 }
 
                 val mode = when {
+                    isVid || VideoProcessor.isVideoFile(ext) -> UpscaleWorker.MODE_VIDEO
                     ext == "mobi" || ext == "prc" -> UpscaleWorker.MODE_MOBI_ARCHIVE
                     isZip || ext == "cbz" || ext == "zip" -> UpscaleWorker.MODE_BATCH_ARCHIVE
                     else -> UpscaleWorker.MODE_SINGLE_IMAGE
@@ -211,25 +239,30 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
                 val inputData = workDataOf(
                     UpscaleWorker.KEY_MODE to mode,
                     UpscaleWorker.KEY_INPUT_PATH to cacheFile.absolutePath,
-                    UpscaleWorker.KEY_ORIGINAL_NAME to (_selectedFileName.value ?: "image.png"),
+                    UpscaleWorker.KEY_ORIGINAL_NAME to (_selectedFileName.value ?: (if (isVid) "video.mp4" else "image.png")),
                     UpscaleWorker.KEY_CUSTOM_OUTPUT_DIR to _customOutputDir.value,
                     UpscaleWorker.KEY_SCALE to _scale.value,
                     UpscaleWorker.KEY_USE_FP16 to _useFp16.value,
                     UpscaleWorker.KEY_FORCE_LOW_RAM to _forceLowRam.value
                 )
 
-                val workRequest = OneTimeWorkRequestBuilder<UpscaleWorker>()
+                val upscaleWorkRequest = OneTimeWorkRequestBuilder<UpscaleWorker>()
                     .setInputData(inputData)
+                    .addTag("FEATHER_UPSCALE_JOB")
                     .build()
 
                 WorkManager.getInstance(appContext).enqueueUniqueWork(
-                    "FeatherUpscaleWork",
+                    "FEATHER_UPSCALE_WORK",
                     ExistingWorkPolicy.REPLACE,
-                    workRequest
+                    upscaleWorkRequest
                 )
+
             } catch (e: Throwable) {
                 UpscaleStateManager.updateState(
-                    UpscaleState.Error("Lỗi khởi tạo: ${e.localizedMessage ?: e.message}")
+                    UpscaleState.Error(
+                        message = "Không thể khởi động tác vụ: ${e.message}",
+                        isOom = e.message?.contains("Out of memory", true) == true
+                    )
                 )
             }
         }
@@ -245,135 +278,93 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
 
     fun cancelUpscale() {
         UpscaleStateManager.cancel()
-        WorkManager.getInstance(appContext).cancelUniqueWork("FeatherUpscaleWork")
+        WorkManager.getInstance(appContext).cancelUniqueWork("FEATHER_UPSCALE_WORK")
+    }
+
+    fun clearState() {
+        _selectedUri.value = null
+        _selectedFileName.value = null
+        _beforeBitmap.value = null
+        _afterBitmap.value = null
+        _isBatchZip.value = false
+        _isVideo.value = false
+        UpscaleStateManager.reset()
     }
 
     fun reset() {
-        UpscaleStateManager.reset()
-        _afterBitmap.value = null
+        clearState()
     }
 
-    /**
-     * Hủy tiến trình upscale, xóa các tệp tạm thời trong cache và bảo toàn 100% file gốc ban đầu.
-     */
-    fun cancelAndCleanup(onComplete: () -> Unit) {
+    fun cancelAndCleanup(onFinish: (() -> Unit)? = null) {
         cancelUpscale()
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                appContext.cacheDir.listFiles()?.forEach { file ->
-                    if (file.name.startsWith("input_job")) file.delete()
-                }
-            } catch (_: Throwable) {}
-            withContext(Dispatchers.Main) {
-                onComplete()
-            }
-        }
+        clearState()
+        onFinish?.invoke()
     }
 
-    /**
-     * Lưu trạng thái và file tạm vào thư mục UpScale_Drafts do app tự tạo để tiếp tục sau này.
-     */
-    fun saveDraftAndExit(onComplete: () -> Unit) {
-        cancelUpscale()
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val draftsDir = File(appContext.getExternalFilesDir(null) ?: appContext.filesDir, "UpScale_Drafts").apply { mkdirs() }
-                val fileName = _selectedFileName.value ?: "draft_comic.cbz"
-                val ext = if (fileName.contains('.')) fileName.substringAfterLast('.').lowercase() else "cbz"
-                val sourceCacheFile = File(appContext.cacheDir, "input_job.$ext")
-
-                if (sourceCacheFile.exists()) {
-                    val targetDraftFile = File(draftsDir, fileName)
-                    sourceCacheFile.copyTo(targetDraftFile, overwrite = true)
-                }
-
-                // Lưu metadata cấu hình draft
-                val metaFile = File(draftsDir, "draft_metadata.txt")
-                metaFile.writeText(
-                    "fileName=$fileName\n" +
-                    "isBatchZip=${_isBatchZip.value}\n" +
-                    "preset=${_selectedPreset.value}\n" +
-                    "scale=${_scale.value}\n" +
-                    "useFp16=${_useFp16.value}\n" +
-                    "forceLowRam=${_forceLowRam.value}\n" +
-                    "timestamp=${System.currentTimeMillis()}"
-                )
-            } catch (_: Throwable) {}
-            withContext(Dispatchers.Main) {
-                onComplete()
-            }
-        }
+    fun saveDraftAndExit(onFinish: (() -> Unit)? = null) {
+        pauseUpscale()
+        onFinish?.invoke()
     }
 
-    /**
-     * Tự động nhận diện Preset từ màu sắc, độ bão hòa (saturation) và tỉ lệ kích thước.
-     * Hoạt động an toàn 100%, không bao giờ crash.
-     */
     internal fun detectPresetFromBitmap(bitmap: Bitmap?): String {
         if (bitmap == null) return "Manga Màu"
-        try {
-            val safe = if (bitmap.config == Bitmap.Config.HARDWARE) {
-                bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: return "Manga Màu"
-            } else {
-                bitmap
-            }
-            val w = safe.width
-            val h = safe.height
-            val stepX = maxOf(1, w / 32)
-            val stepY = maxOf(1, h / 32)
+        val sampleW = minOf(bitmap.width, 100)
+        val sampleH = minOf(bitmap.height, 100)
+        val scaled = Bitmap.createScaledBitmap(bitmap, sampleW, sampleH, false)
+        val pixels = IntArray(sampleW * sampleH)
+        scaled.getPixels(pixels, 0, sampleW, 0, 0, sampleW, sampleH)
+        if (scaled != bitmap) scaled.recycle()
 
-            var totalSampled = 0
-            var monochromeCount = 0
-            var totalSat = 0f
+        var grayCount = 0
+        var totalSat = 0f
+        val hsv = FloatArray(3)
 
-            for (y in 0 until h step stepY) {
-                for (x in 0 until w step stepX) {
-                    val color = safe.getPixel(x, y)
-                    val r = (color shr 16) and 0xFF
-                    val g = (color shr 8) and 0xFF
-                    val b = color and 0xFF
+        for (pixel in pixels) {
+            val r = (pixel shr 16) and 0xFF
+            val g = (pixel shr 8) and 0xFF
+            val b = pixel and 0xFF
 
-                    val max = maxOf(r, g, b)
-                    val min = minOf(r, g, b)
-                    val sat = if (max == 0) 0f else (max - min).toFloat() / max
-                    totalSat += sat
-
-                    val diffRG = kotlin.math.abs(r - g)
-                    val diffGB = kotlin.math.abs(g - b)
-                    val diffRB = kotlin.math.abs(r - b)
-                    if (diffRG <= 15 && diffGB <= 15 && diffRB <= 15) {
-                        monochromeCount++
-                    }
-                    totalSampled++
-                }
+            if (Math.abs(r - g) <= 12 && Math.abs(g - b) <= 12 && Math.abs(r - b) <= 12) {
+                grayCount++
             }
 
-            if (totalSampled == 0) return "Manga Màu"
+            android.graphics.Color.RGBToHSV(r, g, b, hsv)
+            totalSat += hsv[1]
+        }
 
-            val monoRatio = monochromeCount.toFloat() / totalSampled
-            val avgSat = totalSat / totalSampled
+        val totalPixels = pixels.size.toFloat()
+        val grayRatio = grayCount / totalPixels
+        val avgSat = totalSat / totalPixels
 
-            return when {
-                monoRatio >= 0.82f || avgSat < 0.12f -> "Manga B&W"
-                avgSat >= 0.35f || (w >= 1000 && h >= 1000 && (w.toFloat() / h in 0.65f..1.5f)) -> "Cover Poster"
-                else -> "Manga Màu"
-            }
-        } catch (_: Throwable) {
-            return "Manga Màu"
+        return when {
+            grayRatio >= 0.82f || avgSat < 0.12f -> "Manga B&W"
+            avgSat >= 0.35f || (bitmap.width >= 1000 && bitmap.height >= 1000) -> "Cover Poster"
+            else -> "Manga Màu"
         }
     }
 
     private fun queryFileName(uri: Uri): String? {
-        var name: String? = null
-        try {
+        if (uri.scheme == "file") return File(uri.path ?: "").name
+        return try {
             appContext.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (nameIndex >= 0 && cursor.moveToFirst()) {
-                    name = cursor.getString(nameIndex)
-                }
+                if (nameIndex != -1 && cursor.moveToFirst()) cursor.getString(nameIndex) else null
             }
-        } catch (_: Exception) {}
-        return name
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun extractVideoThumbnail(uri: Uri): Bitmap? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(appContext, uri)
+            retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+        } catch (_: Throwable) {
+            null
+        } finally {
+            try { retriever.release() } catch (_: Throwable) {}
+        }
     }
 
     private fun decodeSampledPreviewFromUri(uri: Uri, maxDimension: Int): Bitmap? {
@@ -427,6 +418,19 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         canvas.drawColor(android.graphics.Color.LTGRAY)
         val label = if (name.endsWith(".mobi", true) || name.endsWith(".prc", true)) "MOBI / PRC E-Book" else "CBZ / ZIP Comic Book"
         canvas.drawText(label, 200f, 300f, paint)
+        return bmp
+    }
+
+    private fun createVideoThumbnailPlaceholder(name: String): Bitmap {
+        val bmp = Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        val paint = android.graphics.Paint().apply {
+            color = android.graphics.Color.DKGRAY
+            textSize = 26f
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+        canvas.drawColor(android.graphics.Color.DKGRAY)
+        canvas.drawText("Video: $name", 320f, 180f, paint)
         return bmp
     }
 }

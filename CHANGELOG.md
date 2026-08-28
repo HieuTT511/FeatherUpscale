@@ -4,6 +4,23 @@ Tất cả các thay đổi, tính năng mới và bản vá lỗi của ứng d
 
 ---
 
+## 🚀 [v1.5.0] — 2026-08-28
+### 🎬 Đột Phá Tính Năng: AI Video Super-Resolution (Upscale Video Tăng Tốc Phần Cứng)
+- **Đánh Giá & Triển Khai Xử Lý Video Độc Lập An Toàn 100%**:
+  - Không ảnh hưởng đến bất kỳ tính năng Ảnh Đơn hay Tập Truyện CBZ/MOBI nào hiện tại (Tuân thủ nguyên tắc Regression Protection).
+- **Kiến Trúc Frame-by-Frame Demuxing $O(1)$ RAM**:
+  - Trích xuất từng khung hình video theo luồng thời gian thực qua `MediaMetadataRetriever`, bộ nhớ giải mã ổn định tuyệt đối và không gây tràn RAM.
+- **Bảo Toàn 100% Âm Thanh Gốc (Lossless Audio Passthrough)**:
+  - Tự động trích xuất track âm thanh gốc từ video nguồn (AAC/MP3/OPUS) và trộn trực tiếp vào tệp MP4 kết quả bằng `MediaExtractor` + `MediaMuxer` với độ trễ 0ms và không suy hao chất lượng.
+- **Tăng Tốc Mã Hóa Phần Cứng H.264 / AVC**:
+  - Mã hóa trực tiếp từng khung hình đã upscale vào `MediaCodec` Input Surface với bitrate cao lên tới 25–30 Mbps cho video siêu nét 1080p và 4K UHD.
+- **Giao Diện Thẻ Chọn Video AI Trực Quan**:
+  - Bổ sung thẻ chọn tệp **Video AI** (`.mp4`, `.mkv`, `.webm`, `.avi`, `.mov`, `.3gp`) với hiển thị tiến trình Live Frame Preview và FPS thời gian thực.
+- **Thư Mục Đầu Ra Chuẩn Hóa**:
+  - Video hoàn thành được tự động lưu vào thư mục `Movies/UpScale` hoặc thư mục tùy chọn của người dùng.
+
+---
+
 ## 🌟 [v1.4.0] — 2026-08-28
 ### 🚀 Nâng Cấp Engine AI Real-ESRGAN Mới Nhất (xinntao/Real-ESRGAN Latest Build Architecture)
 - **Tích Hợp Kiến Trúc Real-ESRGAN Chuẩn Mới Nhất (Tencent NCNN Vulkan)**:

@@ -34,9 +34,9 @@ object StorageHelper {
 
     /**
      * Mở OutputStream để ghi file đầu ra một cách an toàn và đúng quyền:
-     * - Giữ nguyên định dạng đuôi file chuẩn (.cbz cho tập truyện, .png cho ảnh).
+     * - Giữ nguyên định dạng đuôi file chuẩn (.cbz cho tập truyện, .png cho ảnh, .mp4 cho video).
      * - Nếu người dùng chọn Custom Tree URI (content://...): dùng DocumentFile để tạo file và mở stream.
-     * - Nếu mặc định: ghi vào thư mục File công khai (Pictures/UpScale hoặc Download/UpScale).
+     * - Nếu mặc định: ghi vào thư mục File công khai (Pictures/UpScale, Movies/UpScale hoặc Download/UpScale).
      */
     fun createOutputFileStream(
         context: Context,
@@ -45,11 +45,15 @@ object StorageHelper {
         mimeType: String,
         isComicOrMobi: Boolean
     ): OutputTarget {
-        // Tối ưu MIME type để Android Scoped Storage không tự ý đổi đuôi .cbz thành .zip
+        val isVideo = fileName.endsWith(".mp4", true) || fileName.endsWith(".mkv", true) || mimeType.startsWith("video/")
+
+        // Tối ưu MIME type để Android Scoped Storage không tự ý đổi đuôi file
         val safeMimeType = when {
             fileName.endsWith(".cbz", true) -> "application/x-cbz"
             fileName.endsWith(".png", true) -> "image/png"
             fileName.endsWith(".jpg", true) || fileName.endsWith(".jpeg", true) -> "image/jpeg"
+            fileName.endsWith(".mp4", true) -> "video/mp4"
+            fileName.endsWith(".mkv", true) -> "video/x-matroska"
             else -> mimeType
         }
 
@@ -90,10 +94,10 @@ object StorageHelper {
         }
 
         // Fallback thư mục công khai chuẩn
-        val publicParent = if (isComicOrMobi) {
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        } else {
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        val publicParent = when {
+            isComicOrMobi -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            isVideo -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+            else -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
         }
 
         var upScaleDir = File(publicParent, "UpScale")
@@ -102,10 +106,10 @@ object StorageHelper {
         }
 
         if (!upScaleDir.exists() || !upScaleDir.canWrite()) {
-            val appBase = if (isComicOrMobi) {
-                context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: File(context.filesDir, "downloads")
-            } else {
-                context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: File(context.filesDir, "pictures")
+            val appBase = when {
+                isComicOrMobi -> context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: File(context.filesDir, "downloads")
+                isVideo -> context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: File(context.filesDir, "movies")
+                else -> context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: File(context.filesDir, "pictures")
             }
             upScaleDir = File(appBase, "UpScale").apply { mkdirs() }
         }

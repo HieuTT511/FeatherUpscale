@@ -64,3 +64,9 @@ Mỗi lần phát hành bản build mới, hệ thống tự động nhảy vers
 ## 📌 Quy Tắc 8: Ghi Nhật Ký Thay Đổi (Changelog) Cho Mỗi Bản Release Build
 - Mọi bản build release phát hành đều phải được ghi nhận chi tiết trong tệp `CHANGELOG.md` tại thư mục gốc của dự án.
 - Nội dung changelog bao gồm: Số phiên bản, ngày phát hành, danh sách tính năng mới, các cải tiến UX/giao diện và danh mục các lỗi đã được khắc phục.
+
+---
+
+## 📌 Quy Tắc 9: Tự Động Thực Thi Toàn Diện (Autonomous Execution — Zero Prompting)
+- Không cần hỏi người dùng accept hay review giữa chừng.
+- Tự động chủ động triển khai trọn vẹn mọi bước: Nghiên cứu $\rightarrow$ Lập trình $\rightarrow$ Viết Unit Tests & chạy Test pass 100% $\rightarrow$ Cập nhật Changelog $\rightarrow$ Bump version $\rightarrow$ Build Signed Release APK & Verify $\rightarrow$ Git Commit & Push GitHub.
