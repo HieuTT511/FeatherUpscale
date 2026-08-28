@@ -59,3 +59,8 @@ Mỗi lần phát hành bản build mới, hệ thống tự động nhảy vers
 - Phải đánh giá tính đúng đắn, độ phức tạp thời gian/bộ nhớ và các đánh đổi liên quan trước khi lựa chọn hoặc triển khai.
 - Khi có nhiều phương án, cần so sánh các phương án và nêu rõ lý do chọn phương án được sử dụng trong mã nguồn.
 
+---
+
+## 📌 Quy Tắc 8: Ghi Nhật Ký Thay Đổi (Changelog) Cho Mỗi Bản Release Build
+- Mọi bản build release phát hành đều phải được ghi nhận chi tiết trong tệp `CHANGELOG.md` tại thư mục gốc của dự án.
+- Nội dung changelog bao gồm: Số phiên bản, ngày phát hành, danh sách tính năng mới, các cải tiến UX/giao diện và danh mục các lỗi đã được khắc phục.
