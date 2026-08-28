@@ -34,6 +34,7 @@ object StorageHelper {
 
     /**
      * Mở OutputStream để ghi file đầu ra một cách an toàn và đúng quyền:
+     * - Giữ nguyên định dạng đuôi file chuẩn (.cbz cho tập truyện, .png cho ảnh).
      * - Nếu người dùng chọn Custom Tree URI (content://...): dùng DocumentFile để tạo file và mở stream.
      * - Nếu mặc định: ghi vào thư mục File công khai (Pictures/UpScale hoặc Download/UpScale).
      */
@@ -44,6 +45,14 @@ object StorageHelper {
         mimeType: String,
         isComicOrMobi: Boolean
     ): OutputTarget {
+        // Tối ưu MIME type để Android Scoped Storage không tự ý đổi đuôi .cbz thành .zip
+        val safeMimeType = when {
+            fileName.endsWith(".cbz", true) -> "application/x-cbz"
+            fileName.endsWith(".png", true) -> "image/png"
+            fileName.endsWith(".jpg", true) || fileName.endsWith(".jpeg", true) -> "image/jpeg"
+            else -> mimeType
+        }
+
         if (!customOutputDirUriStr.isNullOrEmpty() && customOutputDirUriStr.startsWith("content://")) {
             try {
                 val treeUri = Uri.parse(customOutputDirUriStr)
@@ -58,8 +67,11 @@ object StorageHelper {
 
                     // Xóa file cũ cùng tên nếu đã có
                     targetDirDoc.findFile(fileName)?.delete()
+                    targetDirDoc.findFile("$fileName.zip")?.delete()
 
-                    val fileDoc = targetDirDoc.createFile(mimeType, fileName)
+                    val fileDoc = targetDirDoc.createFile(safeMimeType, fileName)
+                        ?: targetDirDoc.createFile("application/octet-stream", fileName)
+
                     if (fileDoc != null) {
                         val outputStream = context.contentResolver.openOutputStream(fileDoc.uri)
                         if (outputStream != null) {
@@ -136,4 +148,3 @@ object StorageHelper {
         val localFile: File? = null
     )
 }
-

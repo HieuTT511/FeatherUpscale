@@ -4,6 +4,14 @@ Tất cả các thay đổi, tính năng mới và bản vá lỗi của ứng d
 
 ---
 
+## 🌟 [v1.3.5] — 2026-08-28
+### 📚 Chuẩn Hóa Định Dạng Tệp Truyện CBZ (Loại Bỏ Hoàn Toàn Tự Động Đổi Đuôi .ZIP)
+- **Bảo Toàn 100% Đuôi Mở Rộng `.cbz` Cho Tập Truyện**:
+  - Khắc phục cơ chế tự động ép đuôi `.zip` của Android DocumentFile: Sử dụng MIME type chuyên dụng `application/x-cbz` để hệ điều hành lưu chính xác tệp truyện tranh `[Tên_gốc]_Upscale_[scale]x.cbz`.
+  - Không còn hiện tượng tự động sinh tệp `.zip` hay `.cbz.zip`. Các ứng dụng đọc truyện tranh (Tachiyomi, Mihon, Perfect Viewer, CDisplayEx, v.v.) nhận diện và đọc trực tiếp mượt mà ngay lập tức.
+
+---
+
 ## 🌟 [v1.3.4] — 2026-08-28
 ### 🎨 Cải Tiến Toàn Diện Khung Preview & Sửa Lỗi Mở Thư Mục Xuất Ảnh
 - **Triệt Tiêu 100% Hai Khoảng Đen Hai Bên (Aspect-Adaptive Fill)**:
@@ -28,8 +36,7 @@ Tất cả các thay đổi, tính năng mới và bản vá lỗi của ứng d
 
 ## 🌟 [v1.3.2] — 2026-08-28
 ### 🎨 Thiết Kế Lại Khung So Sánh Preview Điện Ảnh & Zoom Soi Chi Tiết Chuẩn Xác
-- **Aspect-Fit Chuẩn Xác 100% (Loại bỏ triệt để méo hình)**:
-  - Tự động tính toán khung hình và căn giữa theo tỉ lệ gốc của bức ảnh.
+- **Aspect-Fit Chuẩn Xác 100% (Loại bỏ triệt để méo hình)**.
 - **Tính năng Pinch-to-Zoom & Pan Soi Chi Tiết Cận Cảnh (1.0x – 5.0x)**.
 - **Lấy Mẫu Phản Ánh Độ Nét Tương Phản Thật (Authentic Super-Resolution Rendering)**.
 

@@ -202,8 +202,7 @@ class UpscaleWorker(
                     context = applicationContext,
                     customOutputDirUriStr = customOutputDir,
                     fileName = "${baseName}_Upscale_${scale}x.cbz",
-                    mimeType = "application/zip",
-                    isComicOrMobi = true
+                    mimeType = "application/x-cbz",
                 )
 
                 tempOutputFile.inputStream().use { input ->
@@ -216,9 +215,8 @@ class UpscaleWorker(
                 val fileSizeStr = formatFileSize(tempOutputFile.length())
                 tempOutputFile.delete()
 
-                StorageHelper.scanMediaFile(applicationContext, outTarget, "application/zip")
+                StorageHelper.scanMediaFile(applicationContext, outTarget, "application/x-cbz")
 
-                val duration = System.currentTimeMillis() - startTime
 
                 UpscaleStateManager.updateState(
                     UpscaleState.Completed(
