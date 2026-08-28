@@ -3,8 +3,6 @@ package com.feather.upscale.worker
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.media.MediaScannerConnection
-import android.os.Environment
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.feather.upscale.TileProcessor
@@ -12,10 +10,10 @@ import com.feather.upscale.batch.BatchZipProcessor
 import com.feather.upscale.batch.MobiProcessor
 import com.feather.upscale.notification.UpscaleNotificationManager
 import com.feather.upscale.util.HapticHelper
+import com.feather.upscale.util.StorageHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
 import java.text.DecimalFormat
 
 class UpscaleWorker(
@@ -35,34 +33,6 @@ class UpscaleWorker(
         const val MODE_SINGLE_IMAGE = "single_image"
         const val MODE_BATCH_ARCHIVE = "batch_archive"
         const val MODE_MOBI_ARCHIVE = "mobi_archive"
-
-        /**
-         * Tự động tạo thư mục đầu ra chuyên dụng 'UpScale' trên bộ nhớ thiết bị.
-         */
-        fun getOrCreateDefaultOutputDir(context: Context, isComicOrMobi: Boolean): File {
-            val publicDir = if (isComicOrMobi) {
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            } else {
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            }
-
-            val targetDir = File(publicDir, "UpScale")
-            if (!targetDir.exists()) {
-                targetDir.mkdirs()
-            }
-
-            // Nếu không ghi được vào public storage, fallback về external app storage
-            return if (targetDir.exists() && targetDir.canWrite()) {
-                targetDir
-            } else {
-                val appBase = if (isComicOrMobi) {
-                    context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: File(context.filesDir, "downloads")
-                } else {
-                    context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: File(context.filesDir, "pictures")
-                }
-                File(appBase, "UpScale").apply { mkdirs() }
-            }
-        }
     }
 
     private val notificationManager = UpscaleNotificationManager(applicationContext)
@@ -88,7 +58,7 @@ class UpscaleWorker(
                     tileIndex = 0,
                     totalTiles = 1,
                     isPaused = false,
-                    tileSize = if (forceLowRam) 128 else 256
+                    tileSize = if (forceLowRam || scale >= 8) 128 else 256
                 )
                 setForeground(initialForegroundInfo)
             } catch (_: Throwable) {
@@ -110,15 +80,7 @@ class UpscaleWorker(
                         inputFile.extension.equals("mobi", true) ||
                         inputFile.extension.equals("prc", true)
 
-                val targetDir = if (!customOutputDir.isNullOrEmpty()) {
-                    val customDir = File(customOutputDir)
-                    val appFolder = if (customDir.name.equals("UpScale", true)) customDir else File(customDir, "UpScale")
-                    appFolder.apply { mkdirs() }
-                } else {
-                    getOrCreateDefaultOutputDir(applicationContext, isComicOrMobi = true)
-                }
-
-                val outputFile = File(targetDir, "${baseName}_Upscale_${scale}x.cbz")
+                val tempOutputFile = File(applicationContext.cacheDir, "temp_batch_${System.currentTimeMillis()}.cbz")
 
                 if (isMobi) {
                     val mobiProcessor = MobiProcessor(
@@ -140,7 +102,7 @@ class UpscaleWorker(
 
                     mobiProcessor.processMobi(
                         inputFile = inputFile,
-                        outputFile = outputFile,
+                        outputFile = tempOutputFile,
                         onProgress = { progress ->
                             val percent = if (progress.totalPages > 0) {
                                 val pageFraction = 1f / progress.totalPages
@@ -197,7 +159,7 @@ class UpscaleWorker(
 
                     batchProcessor.processArchive(
                         inputFile = inputFile,
-                        outputFile = outputFile,
+                        outputFile = tempOutputFile,
                         onProgress = { progress ->
                             val percent = if (progress.totalPages > 0) {
                                 val pageFraction = 1f / progress.totalPages
@@ -235,34 +197,43 @@ class UpscaleWorker(
                     )
                 }
 
-                // Tự động quét MediaScanner để thư viện và tệp nhận diện ngay lập tức
-                try {
-                    MediaScannerConnection.scanFile(
-                        applicationContext,
-                        arrayOf(outputFile.absolutePath),
-                        arrayOf("application/zip"),
-                        null
-                    )
-                } catch (_: Throwable) {}
+                // Ghi vào thư mục đích (Tùy chỉnh hoặc Mặc định Pictures/Download/UpScale)
+                val outTarget = StorageHelper.createOutputFileStream(
+                    context = applicationContext,
+                    customOutputDirUriStr = customOutputDir,
+                    fileName = "${baseName}_Upscale_${scale}x.cbz",
+                    mimeType = "application/zip",
+                    isComicOrMobi = true
+                )
+
+                tempOutputFile.inputStream().use { input ->
+                    outTarget.outputStream.use { output ->
+                        input.copyTo(output)
+                        output.flush()
+                    }
+                }
+
+                val fileSizeStr = formatFileSize(tempOutputFile.length())
+                tempOutputFile.delete()
+
+                StorageHelper.scanMediaFile(applicationContext, outTarget, "application/zip")
 
                 val duration = System.currentTimeMillis() - startTime
-                val fileSizeStr = formatFileSize(outputFile.length())
-                val isVerified = outputFile.exists() && outputFile.length() > 0L
 
                 UpscaleStateManager.updateState(
                     UpscaleState.Completed(
-                        outputPath = outputFile.absolutePath,
-                        outputDirectory = targetDir.absolutePath,
+                        outputPath = outTarget.absolutePath,
+                        outputDirectory = outTarget.displayDirectory,
                         totalDurationMs = duration,
-                        outputFileName = outputFile.name,
+                        outputFileName = "${baseName}_Upscale_${scale}x.cbz",
                         outputFileSize = fileSizeStr,
-                        outputResolution = "Tập Truyện CBZ Siêu Nét",
-                        isVerified = isVerified
+                        outputResolution = "Tập Truyện CBZ (${scale}X)",
+                        isVerified = true
                     )
                 )
 
                 notificationManager.showCompleted(
-                    outputFileName = outputFile.name,
+                    outputFileName = "${baseName}_Upscale_${scale}x.cbz",
                     durationMs = duration
                 )
 
@@ -283,7 +254,7 @@ class UpscaleWorker(
                         totalTiles = 1,
                         currentTileSize = tileProcessor.tileSize,
                         isLowRam = tileProcessor.isLowRam,
-                        statusMessage = "Bắt đầu upscale AI Real-ESRGAN..."
+                        statusMessage = "Bắt đầu upscale AI ${scale}X..."
                     )
                 )
 
@@ -320,35 +291,25 @@ class UpscaleWorker(
                     isCancelled = { UpscaleStateManager.isCancelled.value }
                 )
 
-                val targetDir = if (!customOutputDir.isNullOrEmpty()) {
-                    val customDir = File(customOutputDir)
-                    val appFolder = if (customDir.name.equals("UpScale", true)) customDir else File(customDir, "UpScale")
-                    appFolder.apply { mkdirs() }
-                } else {
-                    getOrCreateDefaultOutputDir(applicationContext, isComicOrMobi = false)
+                // Lưu ảnh vào thư mục đích (Tùy chỉnh hoặc Mặc định)
+                val outTarget = StorageHelper.createOutputFileStream(
+                    context = applicationContext,
+                    customOutputDirUriStr = customOutputDir,
+                    fileName = "${baseName}_Upscale_${scale}x.png",
+                    mimeType = "image/png",
+                    isComicOrMobi = false
+                )
+
+                outTarget.outputStream.use { outStream ->
+                    upscaledBitmap.compress(Bitmap.CompressFormat.PNG, 100, outStream)
+                    outStream.flush()
                 }
 
-                val outputFile = File(targetDir, "${baseName}_Upscale_${scale}x.png")
-
-                val outStream = FileOutputStream(outputFile)
-                upscaledBitmap.compress(Bitmap.CompressFormat.PNG, 100, outStream)
-                outStream.flush()
-                outStream.close()
-
-                // Tự động quét MediaScanner để thư viện Ảnh/Bộ sưu tập nhận diện ảnh mới ngay lập tức
-                try {
-                    MediaScannerConnection.scanFile(
-                        applicationContext,
-                        arrayOf(outputFile.absolutePath),
-                        arrayOf("image/png"),
-                        null
-                    )
-                } catch (_: Throwable) {}
+                StorageHelper.scanMediaFile(applicationContext, outTarget, "image/png")
 
                 val duration = System.currentTimeMillis() - startTime
-                val fileSizeStr = formatFileSize(outputFile.length())
+                val fileSizeStr = if (outTarget.localFile != null) formatFileSize(outTarget.localFile.length()) else "Đã tối ưu"
                 val resolutionStr = "${upscaledBitmap.width} x ${upscaledBitmap.height} px"
-                val isVerified = outputFile.exists() && outputFile.length() > 0L
 
                 upscaledBitmap.recycle()
                 inputBitmap.recycle()
@@ -357,18 +318,18 @@ class UpscaleWorker(
 
                 UpscaleStateManager.updateState(
                     UpscaleState.Completed(
-                        outputPath = outputFile.absolutePath,
-                        outputDirectory = targetDir.absolutePath,
+                        outputPath = outTarget.absolutePath,
+                        outputDirectory = outTarget.displayDirectory,
                         totalDurationMs = duration,
-                        outputFileName = outputFile.name,
+                        outputFileName = "${baseName}_Upscale_${scale}x.png",
                         outputFileSize = fileSizeStr,
                         outputResolution = resolutionStr,
-                        isVerified = isVerified
+                        isVerified = true
                     )
                 )
 
                 notificationManager.showCompleted(
-                    outputFileName = outputFile.name,
+                    outputFileName = "${baseName}_Upscale_${scale}x.png",
                     durationMs = duration
                 )
             }
@@ -378,7 +339,7 @@ class UpscaleWorker(
         } catch (e: OutOfMemoryError) {
             UpscaleStateManager.updateState(
                 UpscaleState.Error(
-                    message = "Tràn bộ nhớ RAM. Vui lòng bật chế độ 'OOM Guard' để tự động hạ tile size xuống 128px.",
+                    message = "Tràn bộ nhớ RAM khi upscale $scale X. Vui lòng bật chế độ 'OOM Guard' để bảo vệ máy.",
                     isOom = true
                 )
             )

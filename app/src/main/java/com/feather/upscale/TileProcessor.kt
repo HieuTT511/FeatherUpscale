@@ -12,13 +12,15 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * Bộ xử lý chia mảnh (Tiling Engine) siêu phân giải không đường viền (Seamless Merging).
  *
+ * Hỗ trợ các tỉ lệ: 2X, 4X, và 8X Ultra-HD Max.
+ *
  * Thuật toán cải tiến đạt chuẩn Seamless Super-Resolution (Quy tắc 7):
  * 1. Overlap Padding: Mỗi tile được mở rộng thêm biên padding P = 16px (input) để triệt tiêu hiện tượng méo biên (boundary distortion) của mạng nơ-ron tích chập (CNN).
  * 2. Normalized Weight Blending (Hòa trộn trọng số chuẩn hóa):
  *    - Sử dụng hàm trọng số hình thang/Raised-Cosine tại các dải chồng lấn.
  *    - Chuẩn hóa bằng tổng trọng số: Output(x,y) = Sum(W_k * C_k) / Sum(W_k).
  *    - Loại bỏ 100% các ô vuông, đường kẻ phân chia hay vết ghép mảnh, cho bức ảnh đầu ra liền mạch và hoàn hảo tuyệt đối.
- * 3. OOM Guard: Tự động điều chỉnh kích thước tile phù hợp với dung lượng RAM máy.
+ * 3. OOM Guard cho 8X: Tự động điều chỉnh kích thước tile (128px cho 8X) và bảo vệ RAM an toàn.
  */
 class TileProcessor(
     private val context: Context? = null,
@@ -40,15 +42,19 @@ class TileProcessor(
 
     val isLowRam: Boolean = forcedLowRam ?: isLowRamDevice()
 
-    var tileSize: Int = if (isLowRam) LOW_RAM_TILE_SIZE else DEFAULT_TILE_SIZE
+    var tileSize: Int = when {
+        isLowRam || scale >= 8 -> LOW_RAM_TILE_SIZE
+        else -> DEFAULT_TILE_SIZE
+    }
         internal set
 
     companion object {
         const val DEFAULT_TILE_SIZE = 256
         const val LOW_RAM_TILE_SIZE = 128
         const val MIN_TILE_SIZE = 64
-        const val OVERLAP = 16 // Overlap in input space (16px input -> 64px output at 4x)
-        const val MAX_OUTPUT_DIMENSION = 4096 // 4K UHD chuẩn an toàn tuyệt đối cho Android Canvas / GPU textures
+        const val OVERLAP = 16 // Overlap in input space (16px input -> 64px output at 4x, 128px at 8x)
+        const val MAX_OUTPUT_DIMENSION = 4096 // 4K UHD chuẩn an toàn
+        const val MAX_OUTPUT_DIMENSION_8X = 8192 // 8K Ultra-HD cho tỉ lệ 8x
         private const val MIN_FREE_BYTES_PER_TILE = 32L * 1024L * 1024L // ~32MB
 
         /**
@@ -283,15 +289,17 @@ class TileProcessor(
             input
         }
 
+        val maxSafeDim = if (isLowRam) MAX_OUTPUT_DIMENSION else (if (scale >= 8) MAX_OUTPUT_DIMENSION_8X else MAX_OUTPUT_DIMENSION)
+
         val targetOutW = softwareBitmap.width * scale
         val targetOutH = softwareBitmap.height * scale
-        if (targetOutW <= MAX_OUTPUT_DIMENSION && targetOutH <= MAX_OUTPUT_DIMENSION) {
+        if (targetOutW <= maxSafeDim && targetOutH <= maxSafeDim) {
             return softwareBitmap
         }
 
         val scaleRatio = minOf(
-            MAX_OUTPUT_DIMENSION.toFloat() / targetOutW,
-            MAX_OUTPUT_DIMENSION.toFloat() / targetOutH
+            maxSafeDim.toFloat() / targetOutW,
+            maxSafeDim.toFloat() / targetOutH
         )
 
         val newW = (softwareBitmap.width * scaleRatio).toInt().coerceAtLeast(64)

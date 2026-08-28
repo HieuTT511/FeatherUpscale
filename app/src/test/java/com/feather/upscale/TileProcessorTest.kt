@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Unit test thuần JVM cho logic Seamless Merging, OOM guard và chia tile của TileProcessor.
+ * Unit test thuần JVM cho logic Seamless Merging, OOM guard, tỉ lệ 8X và chia tile của TileProcessor.
  */
 class TileProcessorTest {
 
@@ -65,6 +65,14 @@ class TileProcessorTest {
     }
 
     @Test
+    fun `TileProcessor 8X tu dong chon tile 128px de bao ve an toan bo nho RAM`() {
+        val processor8x = TileProcessor(scale = 8, forcedLowRam = false)
+        assertEquals(128, processor8x.tileSize)
+        val tiles8x = processor8x.computeTiles(500, 500)
+        assertTrue("Tỉ lệ 8x chia tile an toàn 128px", tiles8x.isNotEmpty())
+    }
+
+    @Test
     fun `computeTiles bao phu toan bo anh goc khong bo sot pixel`() {
         val processor = TileProcessor(forcedLowRam = false)
         val w = 300
@@ -101,10 +109,10 @@ class TileProcessorTest {
     }
 
     @Test
-    fun `fallback upscaler cua NcnnUpscaler hoat dong dung kich thuoc`() {
+    fun `fallback upscaler cua NcnnUpscaler hoat dong dung kich thuoc cho 8x`() {
         val w = 4
         val h = 4
-        val scale = 2
+        val scale = 8
         val input = ByteArray(w * h * 4) { it.toByte() }
         val output = NcnnUpscaler.fallbackUpscale(input, w, h, scale)
 

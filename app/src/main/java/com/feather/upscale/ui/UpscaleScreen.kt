@@ -105,6 +105,7 @@ import com.feather.upscale.ui.theme.EmeraldGpu
 import com.feather.upscale.ui.theme.RoseError
 import com.feather.upscale.ui.theme.VioletPrimary
 import com.feather.upscale.ui.theme.VioletPrimaryLight
+import com.feather.upscale.util.StorageHelper
 import com.feather.upscale.worker.UpscaleState
 import java.io.File
 
@@ -149,7 +150,11 @@ fun UpscaleScreen(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
         if (uri != null) {
-            viewModel.setCustomOutputDir(uri.lastPathSegment ?: uri.path)
+            try {
+                val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(uri, takeFlags)
+            } catch (_: Throwable) {}
+            viewModel.setCustomOutputDir(uri.toString())
         }
     }
 
@@ -617,11 +622,11 @@ fun UpscaleScreen(
                                     modifier = Modifier.clickable(enabled = !isProcessing && !isPaused) { viewModel.setScale(2) }
                                 ) {
                                     Text(
-                                        text = "2x Scale",
+                                        text = "2x",
                                         color = if (scale == 2) Color.White else MaterialTheme.colorScheme.onSurface,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp,
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                     )
                                 }
 
@@ -635,7 +640,21 @@ fun UpscaleScreen(
                                         color = if (scale == 4) Color.White else MaterialTheme.colorScheme.onSurface,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp,
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                    )
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (scale == 8) VioletPrimary else Color.Transparent,
+                                    modifier = Modifier.clickable(enabled = !isProcessing && !isPaused) { viewModel.setScale(8) }
+                                ) {
+                                    Text(
+                                        text = "8x Max",
+                                        color = if (scale == 8) Color.White else MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                     )
                                 }
                             }
@@ -700,7 +719,7 @@ fun UpscaleScreen(
                                 Text("Thư mục lưu đầu ra", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                             }
                             Text(
-                                text = customOutputDir?.let { "Tùy chỉnh: $it" } ?: "Mặc định (Pictures / Download/UpScale)",
+                                text = StorageHelper.getDisplayPathFromTreeUri(customOutputDir)?.let { "Tùy chỉnh: $it" } ?: "Mặc định (Pictures / Download/UpScale)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (customOutputDir != null) CyanAccent else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1
@@ -1130,10 +1149,33 @@ fun UpscaleScreen(
 }
 
 /**
- * Tiện ích mở tệp bằng Intent an toàn qua FileProvider
+ * Tiện ích mở tệp bằng Intent an toàn qua FileProvider hoặc Document URI
  */
 private fun openFile(context: Context, filePath: String?) {
     if (filePath == null) return
+    if (filePath.startsWith("content://")) {
+        try {
+            val uri = Uri.parse(filePath)
+            val mimeType = if (filePath.contains(".cbz", true) || filePath.contains(".zip", true)) "application/zip" else "image/*"
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            return
+        } catch (_: Throwable) {
+            try {
+                val uri = Uri.parse(filePath)
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "*/*")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(Intent.createChooser(intent, "Mở tệp bằng"))
+                return
+            } catch (_: Throwable) {}
+        }
+    }
+
     val file = File(filePath)
     if (!file.exists()) return
     try {
@@ -1164,6 +1206,18 @@ private fun openFile(context: Context, filePath: String?) {
  * Tiện ích mở thư mục chứa kết quả qua File Manager
  */
 private fun openFolder(context: Context, dirPath: String?, filePath: String?) {
+    if (filePath != null && filePath.startsWith("content://")) {
+        try {
+            val uri = Uri.parse(filePath)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "*/*")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(Intent.createChooser(intent, "Mở tệp trong thư mục"))
+            return
+        } catch (_: Throwable) {}
+    }
+
     if (filePath != null) {
         val file = File(filePath)
         if (file.exists()) {
@@ -1189,6 +1243,20 @@ private fun openFolder(context: Context, dirPath: String?, filePath: String?) {
  */
 private fun shareFile(context: Context, filePath: String?) {
     if (filePath == null) return
+    if (filePath.startsWith("content://")) {
+        try {
+            val uri = Uri.parse(filePath)
+            val mimeType = if (filePath.contains(".cbz", true) || filePath.contains(".zip", true)) "application/zip" else "image/png"
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = mimeType
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(intent, "Chia sẻ kết quả Upscale"))
+            return
+        } catch (_: Throwable) {}
+    }
+
     val file = File(filePath)
     if (!file.exists()) return
     try {

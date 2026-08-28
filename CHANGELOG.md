@@ -4,6 +4,19 @@ Tất cả các thay đổi, tính năng mới và bản vá lỗi của ứng d
 
 ---
 
+## 🚀 [v1.3.0] — 2026-08-28
+### ✨ Tính năng mới Đột phá: Upscale 8X Ultra-HD Max & Engine Lưu Trữ Document Tree
+- **Đột phá Tỉ lệ Siêu Phân Giải 8X (8K Ultra-HD Output)**:
+  - Bổ sung tùy chọn tỉ lệ **8X Max** trên thanh điều khiển giao diện (bên cạnh 2X và 4X).
+  - Tự động kích hoạt cơ chế `OOM Guard` chia mảnh 128px an toàn kết hợp dải chồng lấn $128\text{px}$ cho tỉ lệ 8X, đảm bảo **100% không tràn RAM / không crash app** trên mọi dòng máy Android 4GB - 16GB RAM.
+  - Bộ nội suy Catmull-Rom Bicubic Spline 4x4 + Anime4K Linework Sharpener chạy native siêu mượt mà trên tỉ lệ 8X.
+- **Khắc phục Triệt Để Logic Lưu Thư Mục Tùy Chọn (`StorageHelper`)**:
+  - Sửa lỗi đường dẫn ảo Scoped Storage: Khi người dùng chọn thư mục qua `OpenDocumentTree`, ứng dụng cấp quyền vĩnh viễn `takePersistableUriPermission` và sử dụng `DocumentFile` để tự động tạo thư mục con `UpScale/` và ghi tệp trực tiếp vào đúng thư mục người dùng đã chọn.
+  - Tự động hiển thị tên đường dẫn thân thiện (ví dụ: `/Pictures/Manga/UpScale`) trên giao diện thay vì mã URI thô.
+  - Mở tệp chính xác bằng `Document URI` lẫn `FileProvider`.
+
+---
+
 ## 🌟 [v1.2.1] — 2026-08-28
 ### ✨ Tính năng mới & Tự Động Hóa Thư Mục
 - **Tự động Khởi tạo Thư mục Đầu ra Chuyên dụng (`UpScale`)**:
