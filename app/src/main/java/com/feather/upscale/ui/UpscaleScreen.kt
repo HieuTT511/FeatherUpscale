@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -578,14 +579,14 @@ fun UpscaleScreen(
                 }
             }
 
-            // 3. Preset Gợi ý Thể loại truyện (Tự động nhận diện AI + Cho phép chọn tùy ý)
+            // 3. Preset Gợi ý Thể loại (Tự động nhận diện AI + Bộ tính năng Real-ESRGAN Suite)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Preset Tối Ưu",
+                        text = "Bộ Tính Năng AI Real-ESRGAN",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Bold
@@ -608,10 +609,19 @@ fun UpscaleScreen(
                 }
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("Manga Màu", "Manga B&W", "Cover Poster").forEach { preset ->
+                    listOf(
+                        "Anime & Cartoons",
+                        "Face Recovery",
+                        "Fix Pixelation",
+                        "Auto Denoise",
+                        "Lossless Zoom",
+                        "Manga B&W"
+                    ).forEach { preset ->
                         FilterChip(
                             selected = selectedPreset == preset,
                             onClick = { viewModel.setPreset(preset) },
@@ -659,7 +669,7 @@ fun UpscaleScreen(
                             color = VioletPrimary.copy(alpha = 0.15f)
                         ) {
                             Text(
-                                text = "Real-ESRGAN",
+                                text = "Lightning Fast AI",
                                 color = VioletPrimaryLight,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
@@ -668,7 +678,7 @@ fun UpscaleScreen(
                         }
                     }
 
-                    // Segmented Scale Button (2x vs 4x)
+                    // Segmented Scale Button (2x, 4x, 8x, 10x)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -683,7 +693,7 @@ fun UpscaleScreen(
                             color = MaterialTheme.colorScheme.surface,
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
                         ) {
-                            Row(modifier = Modifier.padding(4.dp)) {
+                            Row(modifier = Modifier.padding(3.dp)) {
                                 Surface(
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (scale == 2) VioletPrimary else Color.Transparent,
@@ -693,8 +703,8 @@ fun UpscaleScreen(
                                         text = "2x",
                                         color = if (scale == 2) Color.White else MaterialTheme.colorScheme.onSurface,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
                                     )
                                 }
 
@@ -704,11 +714,11 @@ fun UpscaleScreen(
                                     modifier = Modifier.clickable(enabled = !isProcessing && !isPaused) { viewModel.setScale(4) }
                                 ) {
                                     Text(
-                                        text = "4x Ultra",
+                                        text = "4x",
                                         color = if (scale == 4) Color.White else MaterialTheme.colorScheme.onSurface,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
                                     )
                                 }
 
@@ -721,8 +731,22 @@ fun UpscaleScreen(
                                         text = "8x Max",
                                         color = if (scale == 8) Color.White else MaterialTheme.colorScheme.onSurface,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                    )
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (scale == 10) VioletPrimary else Color.Transparent,
+                                    modifier = Modifier.clickable(enabled = !isProcessing && !isPaused) { viewModel.setScale(10) }
+                                ) {
+                                    Text(
+                                        text = "10x (1000%)",
+                                        color = if (scale == 10) Color.White else MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
                                     )
                                 }
                             }
@@ -1151,7 +1175,7 @@ fun UpscaleScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Icon(imageVector = Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Text("MỞ THƯ MỤC", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("THƯ MỤC ĐẦU RA", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
 
@@ -1275,7 +1299,7 @@ private fun openFile(context: Context, filePath: String?) {
 }
 
 /**
- * Tiện ích mở thư mục chứa kết quả qua File Manager
+ * Tiện ích mở thư mục chứa kết quả lưu đầu ra qua File Manager
  */
 private fun openFolder(context: Context, dirPath: String?, filePath: String?) {
     // 1. Thư mục Tree URI tùy chỉnh (content://...):
@@ -1286,25 +1310,65 @@ private fun openFolder(context: Context, dirPath: String?, filePath: String?) {
                 setDataAndType(treeUri, "vnd.android.document/directory")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(Intent.createChooser(intent, "Mở thư mục UpScale"))
+            context.startActivity(Intent.createChooser(intent, "Mở thư mục lưu đầu ra"))
             return
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+            try {
+                val treeUri = Uri.parse(dirPath)
+                val intent = Intent(Intent.ACTION_VIEW, treeUri).apply {
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(Intent.createChooser(intent, "Mở thư mục lưu đầu ra"))
+                return
+            } catch (_: Throwable) {}
+        }
     }
 
-    // 2. Mở trình quản lý thư viện / bộ sưu tập ảnh/video của thiết bị
+    // 2. Thư mục cục bộ (Pictures/UpScale, Movies/UpScale, Download/UpScale):
+    val targetDir = if (dirPath != null && !dirPath.startsWith("content://")) {
+        File(dirPath)
+    } else if (filePath != null && !filePath.startsWith("content://")) {
+        File(filePath).parentFile
+    } else {
+        null
+    }
+
+    if (targetDir != null && targetDir.exists()) {
+        try {
+            val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", targetDir)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "resource/folder")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(Intent.createChooser(intent, "Mở thư mục lưu đầu ra"))
+            return
+        } catch (_: Throwable) {
+            try {
+                val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", targetDir)
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "*/*")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(Intent.createChooser(intent, "Mở thư mục lưu đầu ra"))
+                return
+            } catch (_: Throwable) {}
+        }
+    }
+
+    // 3. Mở Media Gallery theo loại tệp
     try {
+        val isVid = filePath?.endsWith(".mp4", true) == true || filePath?.endsWith(".mkv", true) == true
+        val mediaUri = if (isVid) Uri.parse("content://media/external/video/media") else Uri.parse("content://media/external/images/media")
+        val mime = if (isVid) "vnd.android.cursor.dir/video" else "vnd.android.cursor.dir/image"
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            val isVid = filePath?.endsWith(".mp4", true) == true || filePath?.endsWith(".mkv", true) == true
-            val mediaUri = if (isVid) Uri.parse("content://media/external/video/media") else Uri.parse("content://media/external/images/media")
-            val mime = if (isVid) "vnd.android.cursor.dir/video" else "vnd.android.cursor.dir/image"
             setDataAndType(mediaUri, mime)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(Intent.createChooser(intent, "Mở thư mục UpScale"))
+        context.startActivity(Intent.createChooser(intent, "Mở thư mục lưu đầu ra"))
         return
     } catch (_: Throwable) {}
 
-    // 3. Fallback: Mở trực tiếp tệp kết quả bằng trình xem mặc định
+    // 4. Fallback: Mở trực tiếp tệp kết quả
     if (filePath != null) {
         openFile(context, filePath)
     }

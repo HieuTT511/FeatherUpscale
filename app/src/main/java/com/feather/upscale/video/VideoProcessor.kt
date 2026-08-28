@@ -24,7 +24,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * Bộ xử lý Siêu Phân Giải Video (AI Video Super-Resolution Engine).
  *
  * Tính năng chính:
- * 1. Trích xuất từng khung hình (Frame-by-Frame Demuxing) qua phần cứng với O(1) RAM.
+ * 1. Trích xuất từng khung hình (Frame-by-Frame Demuxing) an toàn tuyệt đối với O(1) RAM.
  * 2. Bảo toàn 100% chất lượng và đồng bộ âm thanh gốc (Lossless Audio Passthrough).
  * 3. Tăng tốc phần cứng mã hóa H.264 / AVC MP4 qua MediaCodec Input Surface.
  * 4. Tương thích 100% với kiến trúc TileProcessor & Real-ESRGAN AI hiện tại.
@@ -100,9 +100,9 @@ class VideoProcessor(
         val mimeType = MediaFormat.MIMETYPE_VIDEO_AVC // H.264
         val format = MediaFormat.createVideoFormat(mimeType, outW, outH).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            setInteger(MediaFormat.KEY_BIT_RATE, (outW * outH * 4.5).toInt().coerceIn(4_000_000, 30_000_000))
+            setInteger(MediaFormat.KEY_BIT_RATE, (outW * outH * 4).coerceIn(2_000_000, 25_000_000))
             setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1) // 1 second keyframe
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
         }
 
         val encoder = MediaCodec.createEncoderByType(mimeType)
@@ -127,9 +127,18 @@ class VideoProcessor(
                 }
 
                 val timeUs = frameIdx * frameIntervalUs
-                val frameBitmap = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                val rawFrame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
 
-                if (frameBitmap != null) {
+                if (rawFrame != null) {
+                    // Chuyển đổi an toàn sang Software Bitmap nếu cần
+                    val frameBitmap = if (rawFrame.config == Bitmap.Config.HARDWARE || !rawFrame.isMutable) {
+                        rawFrame.copy(Bitmap.Config.ARGB_8888, true).also {
+                            if (it != rawFrame) rawFrame.recycle()
+                        }
+                    } else {
+                        rawFrame
+                    }
+
                     // Upscale từng khung hình bằng TileProcessor
                     val upscaledFrame = tileProcessor.process(
                         bitmap = frameBitmap,
@@ -150,8 +159,12 @@ class VideoProcessor(
                     canvas.restore()
                     inputSurface.unlockCanvasAndPost(canvas)
 
-                    if (frameIdx % 5 == 0) {
-                        onPreviewUpdate?.invoke(upscaledFrame)
+                    // Gửi bản sao an toàn (không bị recycle) sang Preview UI
+                    if (frameIdx % 5 == 0 || frameIdx == totalFrames - 1) {
+                        try {
+                            val previewCopy = upscaledFrame.copy(Bitmap.Config.ARGB_8888, false)
+                            onPreviewUpdate?.invoke(previewCopy)
+                        } catch (_: Throwable) {}
                     }
 
                     upscaledFrame.recycle()

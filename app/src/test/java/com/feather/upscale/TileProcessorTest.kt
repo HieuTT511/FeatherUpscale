@@ -109,13 +109,16 @@ class TileProcessorTest {
     }
 
     @Test
-    fun `fallback upscaler cua NcnnUpscaler hoat dong dung kich thuoc cho 8x`() {
+    fun `fallback upscaler cua NcnnUpscaler hoat dong dung kich thuoc cho 8x va 10x`() {
         val w = 4
         val h = 4
-        val scale = 8
+        val scale8 = 8
         val input = ByteArray(w * h * 4) { it.toByte() }
-        val output = NcnnUpscaler.fallbackUpscale(input, w, h, scale)
+        val output8 = NcnnUpscaler.fallbackUpscale(input, w, h, scale8)
+        assertEquals((w * scale8) * (h * scale8) * 4, output8.size)
 
-        assertEquals((w * scale) * (h * scale) * 4, output.size)
+        val scale10 = 10
+        val output10 = NcnnUpscaler.fallbackUpscale(input, w, h, scale10)
+        assertEquals((w * scale10) * (h * scale10) * 4, output10.size)
     }
 }

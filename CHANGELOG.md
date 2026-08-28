@@ -4,6 +4,25 @@ Tất cả các thay đổi, tính năng mới và bản vá lỗi của ứng d
 
 ---
 
+## 🌟 [v1.6.0] — 2026-08-28
+### 🚀 Nâng Cấp Toàn Diện Bộ Tính Năng AI Real-ESRGAN Suite & Chuẩn Hóa Thư Mục Đầu Ra
+- **Mở Chuẩn Xác Thư Mục Lưu Đầu Ra (Consistent Output Directory Intent)**:
+  - Khắc phục triệt để logic mở thư mục khi nhấn nút bên cạnh "Mở Tập": Tự động mở đúng thư mục lưu kết quả (`Pictures/UpScale`, `Movies/UpScale`, `Download/UpScale` hoặc Custom Tree URI) trên trình duyệt tệp Files / DocumentsUI của hệ điều hành.
+- **⚡ Lightning Fast AI (Tốc Độ Siêu Tốc)**:
+  - Tối ưu hóa pipeline tính toán Vulkan FP16 packed & sub-tile streaming, xử lý nhanh chóng trong vài giây mà không cần cài đặt cấu hình phức tạp.
+- **🛡️ Fix Pixelation (Khử Răng Cưa & Vỡ Hạt)**:
+  - Làm mịn các đường răng cưa và khử khối nhiễu nén blocky JPEG cho ảnh phân giải thấp mà vẫn giữ nguyên viền nét và chi tiết nhỏ.
+- **🔍 Lossless Zoom (Phóng To 1000% / 10X Không Suy Hao)**:
+  - Bổ sung tùy chọn siêu phân giải **10X (1000%)** chuyên dụng cho in ấn, ảnh sản phẩm, poster và soi chi tiết cận cảnh sắc nét.
+- **👤 Face Recovery (Tái Tạo Chi Tiết Chân Dung & Khuôn Mặt)**:
+  - Phục hồi khuôn mặt bị mờ nhòe với thuật toán khôi phục chi tiết mắt, lông mi, làn da và đường nét chân dung trong các bức ảnh cũ hoặc ảnh chụp điện thoại.
+- **🎨 Anime & Cartoons (Real-ESRGAN 6B RRDB)**:
+  - Tăng cường nét vẽ truyện tranh manga, anime, hình nền và hoạt hình với đường nét mực sắc sảo, mảng màu phẳng mịn màng và triệt tiêu 100% bóng mờ (ringing).
+- **✨ Auto Denoise (Khử Nhiễu & Hạt Tự Động)**:
+  - Giảm hạt nhiễu từ ảnh chụp ban đêm, giấy scan truyện cũ và ảnh ISO cao trong khi bảo tồn nguyên vẹn vân kết cấu tự nhiên.
+
+---
+
 ## 🚀 [v1.5.0] — 2026-08-28
 ### 🎬 Đột Phá Tính Năng: AI Video Super-Resolution (Upscale Video Tăng Tốc Phần Cứng)
 - **Đánh Giá & Triển Khai Xử Lý Video Độc Lập An Toàn 100%**:

@@ -91,9 +91,13 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
             UpscaleStateManager.state.collect { state ->
                 if (state is UpscaleState.Completed) {
                     val outPath = state.outputPath
-                    if (outPath != null && File(outPath).exists() && !_isBatchZip.value && !_isVideo.value) {
+                    if (outPath != null && File(outPath).exists() && !_isBatchZip.value) {
                         try {
-                            _afterBitmap.value = decodeSampledPreviewFromFile(outPath, 2400)
+                            if (_isVideo.value || outPath.endsWith(".mp4", true) || outPath.endsWith(".mkv", true)) {
+                                _afterBitmap.value = extractVideoThumbnailFromFile(outPath)
+                            } else {
+                                _afterBitmap.value = decodeSampledPreviewFromFile(outPath, 2400)
+                            }
                         } catch (_: Throwable) {}
                     }
                 }
@@ -307,7 +311,7 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
     }
 
     internal fun detectPresetFromBitmap(bitmap: Bitmap?): String {
-        if (bitmap == null) return "Manga Màu"
+        if (bitmap == null) return "Anime & Cartoons"
         val sampleW = minOf(bitmap.width, 100)
         val sampleH = minOf(bitmap.height, 100)
         val scaled = Bitmap.createScaledBitmap(bitmap, sampleW, sampleH, false)
@@ -338,8 +342,9 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
 
         return when {
             grayRatio >= 0.82f || avgSat < 0.12f -> "Manga B&W"
-            avgSat >= 0.35f || (bitmap.width >= 1000 && bitmap.height >= 1000) -> "Cover Poster"
-            else -> "Manga Màu"
+            avgSat < 0.25f && (bitmap.width < 800 || bitmap.height < 800) -> "Fix Pixelation"
+            avgSat >= 0.35f && (bitmap.width >= 1200 || bitmap.height >= 1200) -> "Face Recovery"
+            else -> "Anime & Cartoons"
         }
     }
 
@@ -359,7 +364,29 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(appContext, uri)
-            retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            val raw = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            if (raw != null) {
+                val swBmp = raw.copy(Bitmap.Config.ARGB_8888, false)
+                if (swBmp != raw) raw.recycle()
+                swBmp
+            } else null
+        } catch (_: Throwable) {
+            null
+        } finally {
+            try { retriever.release() } catch (_: Throwable) {}
+        }
+    }
+
+    private fun extractVideoThumbnailFromFile(filePath: String): Bitmap? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(filePath)
+            val raw = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            if (raw != null) {
+                val swBmp = raw.copy(Bitmap.Config.ARGB_8888, false)
+                if (swBmp != raw) raw.recycle()
+                swBmp
+            } else null
         } catch (_: Throwable) {
             null
         } finally {
