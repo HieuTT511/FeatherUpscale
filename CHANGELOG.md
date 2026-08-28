@@ -4,6 +4,20 @@ Tất cả các thay đổi, tính năng mới và bản vá lỗi của ứng d
 
 ---
 
+## 🌟 [v1.2.1] — 2026-08-28
+### ✨ Tính năng mới & Tự Động Hóa Thư Mục
+- **Tự động Khởi tạo Thư mục Đầu ra Chuyên dụng (`UpScale`)**:
+  - Ứng dụng tự động tạo sẵn thư mục lưu kết quả `Pictures/UpScale` (cho ảnh đơn) và `Download/UpScale` (cho tập truyện CBZ/MOBI), người dùng không cần phải tạo thư mục thủ công.
+  - Tự động đồng bộ hóa tạo thư mục con `UpScale/` ngay cả khi người dùng chọn một thư mục cha tùy ý.
+- **Tự động Nhận diện & Xác minh Tệp Đầu ra trong Thư viện (Verified Media Scanning)**:
+  - Tích hợp `MediaScannerConnection`: Tự động quét và lập chỉ mục (index) tệp đã upscale vào Thư viện/Bộ sưu tập (Gallery/Photos) và Trình quản lý tệp của Android ngay khi vừa hoàn thành.
+  - Trạng thái `UpscaleState.Completed` ghi nhận đầy đủ đường dẫn thư mục `outputDirectory` và cờ xác minh tệp hợp lệ `isVerified`.
+- **Tùy chọn Mở Thư mục Kết Quả Thông Minh**:
+  - Bổ sung nút **"MỞ THƯ MỤC"** ngay tại thẻ kết quả và thanh công cụ điều hướng để người dùng có thể mở trực tiếp thư mục `UpScale` trong ứng dụng Quản lý tệp của máy.
+  - Đảm bảo mở chính xác tệp ảnh/tập truyện đã upscale bằng `FileProvider`.
+
+---
+
 ## 🌟 [v1.2.0] — 2026-08-28
 ### ✨ Tính năng mới & Đột phá Chất lượng Hình ảnh
 - **Nâng cấp Đột phá Chất lượng Upscale HD (Catmull-Rom + Anime4K Linework Enhancement)**:

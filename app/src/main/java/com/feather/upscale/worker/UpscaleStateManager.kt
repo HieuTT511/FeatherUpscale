@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Trạng thái của quá trình Upscale (Single Image hoặc Batch ZIP/CBZ).
+ * Trạng thái của quá trình Upscale (Single Image hoặc Batch ZIP/CBZ/MOBI).
  */
 sealed class UpscaleState {
     data object Idle : UpscaleState()
@@ -38,10 +38,12 @@ sealed class UpscaleState {
         val totalPages: Int = 1,
         val totalDurationMs: Long = 0L,
         val outputPath: String? = null,
+        val outputDirectory: String? = null,
         val outputFileName: String = "",
         val outputResolution: String = "",
         val outputFileSize: String = "",
         val isNewFile: Boolean = true,
+        val isVerified: Boolean = true,
     ) : UpscaleState()
 
     data class Error(

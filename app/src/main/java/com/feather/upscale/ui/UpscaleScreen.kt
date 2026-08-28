@@ -856,88 +856,99 @@ fun UpscaleScreen(
                                         Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldGpu, modifier = Modifier.size(28.dp))
                                         Column {
                                             Text(
-                                                text = "🎉 Upscale Thành Công!",
+                                                text = "🎉 Upscale Hoàn Tất & Đã Lưu!",
                                                 fontWeight = FontWeight.ExtraBold,
                                                 style = MaterialTheme.typography.titleMedium,
                                                 color = EmeraldGpu
                                             )
                                             Text(
-                                                text = "Tệp mới đã được tạo • Thời gian: ${state.totalDurationMs / 1000}s",
+                                                text = "Đã tự động lưu vào thư mục UpScale • ${state.totalDurationMs / 1000}s",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
                                     }
 
-                                    // Hộp ghi chú bảo toàn ảnh gốc
+                                    // Hộp ghi chú bảo toàn ảnh gốc & trạng thái thư mục
                                     Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
-                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                        border = BorderStroke(1.dp, EmeraldGpu.copy(alpha = 0.3f)),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Column(
-                                            modifier = Modifier.padding(12.dp),
+                                            modifier = Modifier.padding(14.dp),
                                             verticalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                                             ) {
-                                                Icon(imageVector = Icons.Default.Info, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(16.dp))
+                                                Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldGpu, modifier = Modifier.size(16.dp))
                                                 Text(
-                                                    text = "Tệp gốc được giữ nguyên 100% (Không ghi đè)",
+                                                    text = if (state.isVerified) "Đã xác minh tệp hợp lệ trong thư viện thiết bị" else "Đang hoàn tất tệp",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = CyanAccent
+                                                    color = EmeraldGpu
                                                 )
                                             }
 
                                             Text(
-                                                text = "📄 Tên tệp mới: ${state.outputFileName.ifEmpty { "upscaled_result.png" }}",
+                                                text = "📄 Tên tệp: ${state.outputFileName.ifEmpty { "upscaled_result.png" }}",
                                                 fontSize = 12.sp,
-                                                fontWeight = FontWeight.Medium
+                                                fontWeight = FontWeight.Bold
                                             )
                                             Text(
                                                 text = "📐 Độ phân giải: ${state.outputResolution.ifEmpty { "4K UHD" }} • Dung lượng: ${state.outputFileSize.ifEmpty { "Đã tối ưu" }}",
                                                 fontSize = 12.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
-                                            if (state.outputPath != null) {
-                                                Text(
-                                                    text = "📁 Vị trí lưu: ${File(state.outputPath).parent ?: "Thư mục UpScale"}",
-                                                    fontSize = 11.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1
-                                                )
-                                            }
+                                            Text(
+                                                text = "📁 Thư mục: ${state.outputDirectory ?: (state.outputPath?.let { File(it).parent } ?: "UpScale")}",
+                                                fontSize = 11.sp,
+                                                color = CyanAccent,
+                                                fontWeight = FontWeight.Medium,
+                                                maxLines = 1
+                                            )
                                         }
                                     }
 
-                                    // Nút Mở tệp / Xem ảnh & Chia sẻ
+                                    // Hàng nút Thao tác: Xem ảnh & Mở thư mục & Chia sẻ
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Button(
                                             onClick = { openFile(context, state.outputPath) },
-                                            modifier = Modifier.weight(1f),
-                                            shape = RoundedCornerShape(14.dp),
+                                            modifier = Modifier.weight(1.2f),
+                                            shape = RoundedCornerShape(12.dp),
                                             colors = ButtonDefaults.buttonColors(containerColor = EmeraldGpu)
                                         ) {
                                             Icon(imageVector = Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(18.dp))
                                             Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Xem ảnh", fontWeight = FontWeight.Bold)
+                                            Text(if (isBatchZip) "Mở tập" else "Xem ảnh", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = { openFolder(context, state.outputDirectory, state.outputPath) },
+                                            modifier = Modifier.weight(1.1f),
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanAccent),
+                                            border = BorderStroke(1.dp, CyanAccent.copy(alpha = 0.6f))
+                                        ) {
+                                            Icon(imageVector = Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Thư mục", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                         }
 
                                         OutlinedButton(
                                             onClick = { shareFile(context, state.outputPath) },
-                                            modifier = Modifier.weight(1f),
-                                            shape = RoundedCornerShape(14.dp)
+                                            modifier = Modifier.weight(0.8f),
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
                                         ) {
                                             Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Chia sẻ", fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 }
@@ -1035,25 +1046,44 @@ fun UpscaleScreen(
                         }
                     }
 
-                    OutlinedButton(
-                        onClick = { viewModel.reset() },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = VioletPrimaryLight),
-                        border = BorderStroke(1.5.dp, VioletPrimary.copy(alpha = 0.6f))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        OutlinedButton(
+                            onClick = { openFolder(context, completedState.outputDirectory, completedState.outputPath) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(50.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanAccent),
+                            border = BorderStroke(1.5.dp, CyanAccent.copy(alpha = 0.6f))
                         ) {
-                            Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Text(
-                                text = "UPSCALE TỆP KHÁC",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Text("MỞ THƯ MỤC", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { viewModel.reset() },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(50.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = VioletPrimaryLight),
+                            border = BorderStroke(1.5.dp, VioletPrimary.copy(alpha = 0.6f))
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Text("TỆP MỚI", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
                         }
                     }
                 }
@@ -1127,6 +1157,30 @@ private fun openFile(context: Context, filePath: String?) {
             }
             context.startActivity(Intent.createChooser(intent, "Mở tệp bằng"))
         } catch (_: Throwable) {}
+    }
+}
+
+/**
+ * Tiện ích mở thư mục chứa kết quả qua File Manager
+ */
+private fun openFolder(context: Context, dirPath: String?, filePath: String?) {
+    if (filePath != null) {
+        val file = File(filePath)
+        if (file.exists()) {
+            try {
+                val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", file)
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "resource/folder")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(Intent.createChooser(intent, "Mở thư mục UpScale"))
+                return
+            } catch (_: Throwable) {}
+        }
+    }
+
+    if (filePath != null) {
+        openFile(context, filePath)
     }
 }
 
