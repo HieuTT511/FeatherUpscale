@@ -1182,13 +1182,39 @@ fun UpscaleScreen(
                                                 fontSize = 12.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
-                                            Text(
-                                                text = "📁 Thư mục: ${state.outputDirectory ?: (state.outputPath?.let { File(it).parent } ?: "UpScale")}",
-                                                fontSize = 11.sp,
-                                                color = CyanAccent,
-                                                fontWeight = FontWeight.Medium,
-                                                maxLines = 1
-                                            )
+
+                                            // Thư mục lưu đầu ra (Có thể nhấn trực tiếp để mở)
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable { StorageHelper.openOutputFolder(context, state.outputDirectory, state.outputPath) }
+                                                    .background(CyanAccent.copy(alpha = 0.08f))
+                                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Icon(imageVector = Icons.Default.Folder, contentDescription = "Thư mục lưu", tint = CyanAccent, modifier = Modifier.size(16.dp))
+                                                    Text(
+                                                        text = "📁 ${state.outputDirectory ?: (state.outputPath?.let { File(it).parent } ?: "UpScale")}",
+                                                        fontSize = 11.sp,
+                                                        color = CyanAccent,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1
+                                                    )
+                                                }
+                                                Text(
+                                                    text = "Mở ➔",
+                                                    fontSize = 11.sp,
+                                                    color = CyanAccent,
+                                                    fontWeight = FontWeight.ExtraBold
+                                                )
+                                            }
                                         }
                                     }
 
@@ -1198,7 +1224,7 @@ fun UpscaleScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Button(
-                                            onClick = { openFile(context, state.outputPath) },
+                                            onClick = { StorageHelper.openFile(context, state.outputPath) },
                                             modifier = Modifier.weight(1.2f),
                                             shape = RoundedCornerShape(12.dp),
                                             colors = ButtonDefaults.buttonColors(containerColor = EmeraldGpu)
@@ -1209,7 +1235,7 @@ fun UpscaleScreen(
                                         }
 
                                         OutlinedButton(
-                                            onClick = { openFolder(context, state.outputDirectory, state.outputPath) },
+                                            onClick = { StorageHelper.openOutputFolder(context, state.outputDirectory, state.outputPath) },
                                             modifier = Modifier.weight(1.1f),
                                             shape = RoundedCornerShape(12.dp),
                                             colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanAccent),
@@ -1217,11 +1243,11 @@ fun UpscaleScreen(
                                         ) {
                                             Icon(imageVector = Icons.Default.Folder, contentDescription = "Mở thư mục lưu", modifier = Modifier.size(18.dp))
                                             Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Thư mục", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                            Text("Mở Thư Mục", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                         }
 
                                         OutlinedButton(
-                                            onClick = { shareFile(context, state.outputPath) },
+                                            onClick = { StorageHelper.shareFile(context, state.outputPath) },
                                             modifier = Modifier.weight(0.8f),
                                             shape = RoundedCornerShape(12.dp),
                                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
@@ -1329,7 +1355,7 @@ fun UpscaleScreen(
                 val completedState = upscaleState as UpscaleState.Completed
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
-                        onClick = { openFile(context, completedState.outputPath) },
+                        onClick = { StorageHelper.openFile(context, completedState.outputPath) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp)
@@ -1358,7 +1384,7 @@ fun UpscaleScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         OutlinedButton(
-                            onClick = { openFolder(context, completedState.outputDirectory, completedState.outputPath) },
+                            onClick = { StorageHelper.openOutputFolder(context, completedState.outputDirectory, completedState.outputPath) },
                             modifier = Modifier
                                 .weight(1f)
                                 .height(50.dp),
@@ -1371,7 +1397,7 @@ fun UpscaleScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Icon(imageVector = Icons.Default.Folder, contentDescription = "Mở thư mục lưu", modifier = Modifier.size(18.dp))
-                                Text("THƯ MỤC ĐẦU RA", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text("MỞ THƯ MỤC LƯU", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
 
@@ -1436,179 +1462,4 @@ fun UpscaleScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
-}
-
-/**
- * Tiện ích mở tệp bằng Intent an toàn qua FileProvider hoặc Document URI
- */
-private fun openFile(context: Context, filePath: String?) {
-    if (filePath == null) return
-    if (filePath.startsWith("content://")) {
-        try {
-            val uri = Uri.parse(filePath)
-            val mimeType = when {
-                filePath.contains(".mp4", true) || filePath.contains(".mkv", true) -> "video/*"
-                filePath.contains(".cbz", true) || filePath.contains(".zip", true) -> "application/zip"
-                else -> "image/*"
-            }
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, mimeType)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
-            return
-        } catch (_: Throwable) {
-            try {
-                val uri = Uri.parse(filePath)
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "*/*")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(Intent.createChooser(intent, "Mở tệp bằng"))
-                return
-            } catch (_: Throwable) {}
-        }
-    }
-
-    val file = File(filePath)
-    if (!file.exists()) return
-    try {
-        val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", file)
-        val mimeType = when {
-            file.extension.equals("mp4", true) || file.extension.equals("mkv", true) -> "video/*"
-            file.extension.equals("cbz", true) || file.extension.equals("zip", true) -> "application/zip"
-            else -> "image/*"
-        }
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mimeType)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(intent)
-    } catch (_: Throwable) {
-        try {
-            val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", file)
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "*/*")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(Intent.createChooser(intent, "Mở tệp bằng"))
-        } catch (_: Throwable) {}
-    }
-}
-
-/**
- * Tiện ích mở thư mục chứa kết quả lưu đầu ra qua File Manager
- */
-private fun openFolder(context: Context, dirPath: String?, filePath: String?) {
-    // 1. Thư mục Tree URI tùy chỉnh (content://...):
-    if (dirPath != null && dirPath.startsWith("content://")) {
-        try {
-            val treeUri = Uri.parse(dirPath)
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(treeUri, "vnd.android.document/directory")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(Intent.createChooser(intent, "Mở thư mục lưu đầu ra"))
-            return
-        } catch (_: Throwable) {
-            try {
-                val treeUri = Uri.parse(dirPath)
-                val intent = Intent(Intent.ACTION_VIEW, treeUri).apply {
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(Intent.createChooser(intent, "Mở thư mục lưu đầu ra"))
-                return
-            } catch (_: Throwable) {}
-        }
-    }
-
-    // 2. Thư mục cục bộ (Pictures/UpScale, Movies/UpScale, Download/UpScale):
-    val targetDir = if (dirPath != null && !dirPath.startsWith("content://")) {
-        File(dirPath)
-    } else if (filePath != null && !filePath.startsWith("content://")) {
-        File(filePath).parentFile
-    } else {
-        null
-    }
-
-    if (targetDir != null && targetDir.exists()) {
-        try {
-            val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", targetDir)
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "resource/folder")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(Intent.createChooser(intent, "Mở thư mục lưu đầu ra"))
-            return
-        } catch (_: Throwable) {
-            try {
-                val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", targetDir)
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "*/*")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(Intent.createChooser(intent, "Mở thư mục lưu đầu ra"))
-                return
-            } catch (_: Throwable) {}
-        }
-    }
-
-    // 3. Mở Media Gallery theo loại tệp
-    try {
-        val isVid = filePath?.endsWith(".mp4", true) == true || filePath?.endsWith(".mkv", true) == true
-        val mediaUri = if (isVid) Uri.parse("content://media/external/video/media") else Uri.parse("content://media/external/images/media")
-        val mime = if (isVid) "vnd.android.cursor.dir/video" else "vnd.android.cursor.dir/image"
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(mediaUri, mime)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(Intent.createChooser(intent, "Mở thư mục lưu đầu ra"))
-        return
-    } catch (_: Throwable) {}
-
-    // 4. Fallback: Mở trực tiếp tệp kết quả
-    if (filePath != null) {
-        openFile(context, filePath)
-    }
-}
-
-/**
- * Tiện ích chia sẻ tệp qua FileProvider
- */
-private fun shareFile(context: Context, filePath: String?) {
-    if (filePath == null) return
-    if (filePath.startsWith("content://")) {
-        try {
-            val uri = Uri.parse(filePath)
-            val mimeType = when {
-                filePath.contains(".mp4", true) || filePath.contains(".mkv", true) -> "video/mp4"
-                filePath.contains(".cbz", true) || filePath.contains(".zip", true) -> "application/zip"
-                else -> "image/png"
-            }
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = mimeType
-                putExtra(Intent.EXTRA_STREAM, uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            context.startActivity(Intent.createChooser(intent, "Chia sẻ kết quả Upscale"))
-            return
-        } catch (_: Throwable) {}
-    }
-
-    val file = File(filePath)
-    if (!file.exists()) return
-    try {
-        val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", file)
-        val mimeType = when {
-            file.extension.equals("mp4", true) || file.extension.equals("mkv", true) -> "video/mp4"
-            file.extension.equals("cbz", true) || file.extension.equals("zip", true) -> "application/zip"
-            else -> "image/png"
-        }
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = mimeType
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        context.startActivity(Intent.createChooser(intent, "Chia sẻ kết quả Upscale"))
-    } catch (_: Throwable) {}
 }
