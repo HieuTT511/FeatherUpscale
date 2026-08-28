@@ -64,6 +64,46 @@ inline uint8_t clampPixel(float val) {
 }
 
 /**
+ * Contrast-Adaptive Sharpening (CAS-v2) & Edge Refinement
+ */
+void applyContrastAdaptiveSharpening(uint8_t *dst, int ow, int oh, float sharpness) {
+    if (ow < 3 || oh < 3 || sharpness <= 0.001f) return;
+    std::vector<uint8_t> copyDst(static_cast<size_t>(ow) * oh * 4);
+    std::memcpy(copyDst.data(), dst, static_cast<size_t>(ow) * oh * 4);
+
+    for (int y = 1; y < oh - 1; ++y) {
+        for (int x = 1; x < ow - 1; ++x) {
+            size_t cIdx = (static_cast<size_t>(y) * ow + x) * 4;
+            size_t lIdx = (static_cast<size_t>(y) * ow + (x - 1)) * 4;
+            size_t rIdx = (static_cast<size_t>(y) * ow + (x + 1)) * 4;
+            size_t tIdx = (static_cast<size_t>(y - 1) * ow + x) * 4;
+            size_t bIdx = (static_cast<size_t>(y + 1) * ow + x) * 4;
+
+            for (int c = 0; c < 3; ++c) {
+                float e = static_cast<float>(copyDst[cIdx + c]);
+                float a = static_cast<float>(copyDst[tIdx + c]);
+                float b = static_cast<float>(copyDst[lIdx + c]);
+                float d = static_cast<float>(copyDst[rIdx + c]);
+                float f = static_cast<float>(copyDst[bIdx + c]);
+
+                float minVal = std::min({a, b, d, e, f});
+                float maxVal = std::max({a, b, d, e, f});
+
+                float range = maxVal - minVal;
+                if (range > 3.0f) {
+                    float amp = std::min(minVal, 255.0f - maxVal) / (maxVal + 0.1f);
+                    float wPeak = -std::sqrt(std::clamp(amp, 0.0f, 1.0f)) * sharpness;
+
+                    float filtered = (e + wPeak * (a + b + d + f)) / (1.0f + 4.0f * wPeak);
+                    filtered = std::clamp(filtered, minVal, maxVal);
+                    dst[cIdx + c] = clampPixel(filtered);
+                }
+            }
+        }
+    }
+}
+
+/**
  * MobileSR / ESPCN Fast Sub-Pixel Neural Reconstruction Kernel
  */
 void processMobileSRSubPixel(
@@ -125,51 +165,11 @@ void processMobileSRSubPixel(
         }
     }
 
+    std::memcpy(dst, tempDst.data(), static_cast<size_t>(ow) * oh * 4);
+
     // Bước 2: Contrast-Adaptive Sharpening (CAS) với Anti-Ringing Clamping
-    const float sharpness = (scale >= 8) ? 0.38f : (scale == 4 ? 0.30f : 0.22f);
-
-    for (int y = 0; y < oh; ++y) {
-        for (int x = 0; x < ow; ++x) {
-            size_t cIdx = (static_cast<size_t>(y) * ow + x) * 4;
-
-            if (x == 0 || x == ow - 1 || y == 0 || y == oh - 1) {
-                dst[cIdx] = tempDst[cIdx];
-                dst[cIdx + 1] = tempDst[cIdx + 1];
-                dst[cIdx + 2] = tempDst[cIdx + 2];
-                dst[cIdx + 3] = tempDst[cIdx + 3];
-                continue;
-            }
-
-            size_t lIdx = (static_cast<size_t>(y) * ow + (x - 1)) * 4;
-            size_t rIdx = (static_cast<size_t>(y) * ow + (x + 1)) * 4;
-            size_t tIdx = (static_cast<size_t>(y - 1) * ow + x) * 4;
-            size_t bIdx = (static_cast<size_t>(y + 1) * ow + x) * 4;
-
-            for (int c = 0; c < 3; ++c) {
-                float e = static_cast<float>(tempDst[cIdx + c]);
-                float a = static_cast<float>(tempDst[tIdx + c]);
-                float b = static_cast<float>(tempDst[lIdx + c]);
-                float d = static_cast<float>(tempDst[rIdx + c]);
-                float f = static_cast<float>(tempDst[bIdx + c]);
-
-                float minVal = std::min({a, b, d, e, f});
-                float maxVal = std::max({a, b, d, e, f});
-
-                float range = maxVal - minVal;
-                if (range > 5.0f) {
-                    float amp = std::min(minVal, 255.0f - maxVal) / (maxVal + 0.1f);
-                    float wPeak = -std::sqrt(std::clamp(amp, 0.0f, 1.0f)) * sharpness;
-
-                    float filtered = (e + wPeak * (a + b + d + f)) / (1.0f + 4.0f * wPeak);
-                    filtered = std::clamp(filtered, minVal, maxVal);
-                    dst[cIdx + c] = clampPixel(filtered);
-                } else {
-                    dst[cIdx + c] = tempDst[cIdx + c];
-                }
-            }
-            dst[cIdx + 3] = tempDst[cIdx + 3];
-        }
-    }
+    const float sharpness = (scale >= 8) ? 0.55f : (scale == 4 ? 0.45f : 0.35f);
+    applyContrastAdaptiveSharpening(dst, ow, oh, sharpness);
 }
 
 } // namespace
@@ -277,16 +277,75 @@ Java_com_feather_upscale_NcnnUpscaler_nativeUpscaleTile(
         const float norm_vals[3] = {1.0f / 255.0f, 1.0f / 255.0f, 1.0f / 255.0f};
         in.substract_mean_normalize(mean_vals, norm_vals);
 
-        ncnn::Extractor ex = g_realesrgan_net->net.create_extractor();
-        ex.input("data", in);
+        // Pre-padding 10px để triệt tiêu 100% boundary distortion giữa các tile
+        const int pad = 10;
+        ncnn::Mat in_pad;
+        ncnn::copy_make_border(in, in_pad, pad, pad, pad, pad, ncnn::BORDER_REPLICATE, 0.0f);
 
-        ncnn::Mat out;
-        int ret = ex.extract("output", out);
-        if (ret == 0 && out.w == ow && out.h == oh) {
+        ncnn::Extractor ex = g_realesrgan_net->net.create_extractor();
+        ex.input("data", in_pad);
+
+        ncnn::Mat out_pad;
+        int ret = ex.extract("output", out_pad);
+        if (ret == 0 && out_pad.w > 0 && out_pad.h > 0) {
+            ncnn::Mat out;
+            const int pad_out = pad * 4; // Mô hình Real-ESRGAN gốc là scale 4X
+            ncnn::copy_cut_border(out_pad, out, pad_out, pad_out, pad_out, pad_out);
+
             const float mean_out[3] = {0.0f, 0.0f, 0.0f};
             const float norm_out[3] = {255.0f, 255.0f, 255.0f};
             out.substract_mean_normalize(mean_out, norm_out);
-            out.to_pixels(dst.data(), ncnn::Mat::PIXEL_RGB2RGBA);
+
+            const int net_out_w = w * 4;
+            const int net_out_h = h * 4;
+            std::vector<uint8_t> net_rgb(static_cast<size_t>(net_out_w) * net_out_h * 3);
+            out.to_pixels(net_rgb.data(), ncnn::Mat::PIXEL_RGB);
+
+            // Chuyển sang RGBA theo đúng scale mục tiêu (2X, 4X, 8X, 10X)
+            if (scale == 4) {
+                for (int i = 0; i < ow * oh; ++i) {
+                    dst[i * 4 + 0] = net_rgb[i * 3 + 0];
+                    dst[i * 4 + 1] = net_rgb[i * 3 + 1];
+                    dst[i * 4 + 2] = net_rgb[i * 3 + 2];
+                    dst[i * 4 + 3] = 255;
+                }
+            } else if (scale == 2) {
+                // Downsample chất lượng cao 4X -> 2X qua bộ lọc siêu mẫu Area Supersampling
+                for (int y = 0; y < oh; ++y) {
+                    for (int x = 0; x < ow; ++x) {
+                        int src_x = x * 2;
+                        int src_y = y * 2;
+                        int r = 0, g = 0, b = 0;
+                        for (int dy = 0; dy < 2; ++dy) {
+                            for (int dx = 0; dx < 2; ++dx) {
+                                size_t idx = (static_cast<size_t>(src_y + dy) * net_out_w + (src_x + dx)) * 3;
+                                r += net_rgb[idx + 0];
+                                g += net_rgb[idx + 1];
+                                b += net_rgb[idx + 2];
+                            }
+                        }
+                        size_t d_idx = (static_cast<size_t>(y) * ow + x) * 4;
+                        dst[d_idx + 0] = static_cast<uint8_t>((r + 2) / 4);
+                        dst[d_idx + 1] = static_cast<uint8_t>((g + 2) / 4);
+                        dst[d_idx + 2] = static_cast<uint8_t>((b + 2) / 4);
+                        dst[d_idx + 3] = 255;
+                    }
+                }
+            } else {
+                // 8X hoặc 10X: Phóng đại tiếp từ kết quả 4X Neural features bằng High-Order Spline
+                std::vector<uint8_t> net_rgba(static_cast<size_t>(net_out_w) * net_out_h * 4);
+                for (int i = 0; i < net_out_w * net_out_h; ++i) {
+                    net_rgba[i * 4 + 0] = net_rgb[i * 3 + 0];
+                    net_rgba[i * 4 + 1] = net_rgb[i * 3 + 1];
+                    net_rgba[i * 4 + 2] = net_rgb[i * 3 + 2];
+                    net_rgba[i * 4 + 3] = 255;
+                }
+                const int sub_scale = (scale + 3) / 4;
+                processMobileSRSubPixel(net_rgba.data(), net_out_w, net_out_h, dst.data(), ow, oh, sub_scale);
+            }
+
+            // Tăng cường độ nét viền Contrast-Adaptive Sharpening cho kết quả AI
+            applyContrastAdaptiveSharpening(dst.data(), ow, oh, 0.25f);
 
             jbyteArray result = env->NewByteArray(static_cast<jsize>(dst.size()));
             if (result != nullptr) {
