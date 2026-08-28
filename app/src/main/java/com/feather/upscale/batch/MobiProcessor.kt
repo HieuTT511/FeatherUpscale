@@ -150,7 +150,7 @@ class MobiProcessor(
         inputFile: File,
         outputFile: File,
         onProgress: (MobiProgress) -> Unit,
-        onPreviewUpdate: ((Bitmap) -> Unit)? = null,
+        onPreviewUpdate: ((Bitmap, Bitmap) -> Unit)? = null,
         isPaused: () -> Boolean = { false },
         isCancelled: () -> Boolean = { false },
     ) = withContext(Dispatchers.IO) {
@@ -202,6 +202,11 @@ class MobiProcessor(
                         continue
                     }
 
+                    var origPageCopy: Bitmap? = null
+                    try {
+                        origPageCopy = originalBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                    } catch (_: Throwable) {}
+
                     // Upscale trang truyện bằng TileProcessor (giới hạn 4K an toàn cho app đọc truyện)
                     val upscaledBitmap = tileProcessor.process(
                         bitmap = originalBitmap,
@@ -218,12 +223,19 @@ class MobiProcessor(
                                 )
                             )
                         },
-                        onPreviewUpdate = onPreviewUpdate,
+                        onPreviewUpdate = null,
                         isPaused = isPaused,
                         isCancelled = isCancelled
                     )
 
                     originalBitmap.recycle()
+
+                    if (origPageCopy != null) {
+                        try {
+                            val upscaledCopy = upscaledBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                            onPreviewUpdate?.invoke(upscaledCopy, origPageCopy)
+                        } catch (_: Throwable) {}
+                    }
 
                     // Ghi trang ảnh đã upscale vào tệp nén CBZ dưới chuẩn JPEG 92
                     val entry = ZipEntry(pageName)

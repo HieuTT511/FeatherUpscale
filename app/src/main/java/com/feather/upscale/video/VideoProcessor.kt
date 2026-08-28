@@ -59,7 +59,7 @@ class VideoProcessor(
         inputFile: File,
         outputFile: File,
         onProgress: ((VideoProgress) -> Unit)? = null,
-        onPreviewUpdate: ((Bitmap) -> Unit)? = null,
+        onPreviewUpdate: ((Bitmap, Bitmap) -> Unit)? = null,
         isPaused: () -> Boolean = { false },
         isCancelled: () -> Boolean = { false },
     ): File = withContext(Dispatchers.IO) {
@@ -139,6 +139,14 @@ class VideoProcessor(
                         rawFrame
                     }
 
+                    val isPreviewFrame = (frameIdx % 5 == 0 || frameIdx == totalFrames - 1)
+                    var previewOrigCopy: Bitmap? = null
+                    if (isPreviewFrame) {
+                        try {
+                            previewOrigCopy = frameBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                        } catch (_: Throwable) {}
+                    }
+
                     // Upscale từng khung hình bằng TileProcessor
                     val upscaledFrame = tileProcessor.process(
                         bitmap = frameBitmap,
@@ -160,10 +168,10 @@ class VideoProcessor(
                     inputSurface.unlockCanvasAndPost(canvas)
 
                     // Gửi bản sao an toàn (không bị recycle) sang Preview UI
-                    if (frameIdx % 5 == 0 || frameIdx == totalFrames - 1) {
+                    if (isPreviewFrame && previewOrigCopy != null) {
                         try {
-                            val previewCopy = upscaledFrame.copy(Bitmap.Config.ARGB_8888, false)
-                            onPreviewUpdate?.invoke(previewCopy)
+                            val previewUpscaledCopy = upscaledFrame.copy(Bitmap.Config.ARGB_8888, false)
+                            onPreviewUpdate?.invoke(previewUpscaledCopy, previewOrigCopy)
                         } catch (_: Throwable) {}
                     }
 

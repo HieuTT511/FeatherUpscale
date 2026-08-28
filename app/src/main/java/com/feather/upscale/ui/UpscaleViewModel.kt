@@ -27,8 +27,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
 
 class UpscaleViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -73,6 +77,21 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
     private val _quantizationMode = MutableStateFlow(NcnnUpscaler.PRECISION_FP16)
     val quantizationMode: StateFlow<Int> = _quantizationMode.asStateFlow()
 
+    private val _rawWidth = MutableStateFlow<Int?>(null)
+    val rawWidth: StateFlow<Int?> = _rawWidth.asStateFlow()
+
+    private val _rawHeight = MutableStateFlow<Int?>(null)
+    val rawHeight: StateFlow<Int?> = _rawHeight.asStateFlow()
+
+    private val _inputResolution = MutableStateFlow<String?>(null)
+    val inputResolution: StateFlow<String?> = _inputResolution.asStateFlow()
+
+    private val _targetResolution = MutableStateFlow<String?>(null)
+    val targetResolution: StateFlow<String?> = _targetResolution.asStateFlow()
+
+    private val _inputMetadataInfo = MutableStateFlow<String?>(null)
+    val inputMetadataInfo: StateFlow<String?> = _inputMetadataInfo.asStateFlow()
+
     private val isDeviceLowRam = run {
         val am = appContext.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         am?.isLowRamDevice ?: false
@@ -89,6 +108,14 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
             UpscaleStateManager.runtimePreview.collect { previewBmp ->
                 if (previewBmp != null) {
                     _afterBitmap.value = previewBmp
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            UpscaleStateManager.runtimeBeforePreview.collect { beforeBmp ->
+                if (beforeBmp != null) {
+                    _beforeBitmap.value = beforeBmp
                 }
             }
         }
@@ -112,6 +139,25 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updateTargetResolution() {
+        val w = _rawWidth.value
+        val h = _rawHeight.value
+        val s = _scale.value
+        if (w != null && h != null && w > 0 && h > 0) {
+            val tw = w * s
+            val th = h * s
+            val badge = when {
+                tw >= 7680 || th >= 7680 -> "8K Ultra-HD"
+                tw >= 3840 || th >= 3840 -> "4K UHD"
+                tw >= 1920 || th >= 1920 -> "Full HD"
+                else -> "HD"
+            }
+            _targetResolution.value = "$tw x $th px ($badge • ${s}X)"
+        } else {
+            _targetResolution.value = null
+        }
+    }
+
     fun setMobileModel(model: String) {
         _mobileModel.value = model
     }
@@ -123,6 +169,7 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
 
     fun setScale(newScale: Int) {
         _scale.value = newScale
+        updateTargetResolution()
     }
 
     fun setUseFp16(enabled: Boolean) {
@@ -154,11 +201,33 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
                 val name = queryFileName(uri) ?: "image_${System.currentTimeMillis()}.png"
                 _selectedFileName.value = name
 
-                // Load thumbnail an toàn cho Preview Slider
+                // 1. Nhận diện kích thước và độ phân giải thật của ảnh đầu vào
+                val bounds = decodeBoundsFromUri(uri)
+                if (bounds != null) {
+                    _rawWidth.value = bounds.first
+                    _rawHeight.value = bounds.second
+                    _inputResolution.value = "${bounds.first} x ${bounds.second} px"
+                    val resQuality = when {
+                        bounds.first >= 3840 || bounds.second >= 3840 -> "4K UHD"
+                        bounds.first >= 1920 || bounds.second >= 1920 -> "Full HD"
+                        bounds.first >= 1280 || bounds.second >= 1280 -> "HD 720p"
+                        else -> "SD"
+                    }
+                    _inputMetadataInfo.value = "Ảnh gốc • $resQuality"
+                } else {
+                    _rawWidth.value = null
+                    _rawHeight.value = null
+                    _inputResolution.value = null
+                    _inputMetadataInfo.value = "Ảnh gốc"
+                }
+
+                updateTargetResolution()
+
+                // 2. Load thumbnail an toàn cho Preview Slider
                 val sampled = decodeSampledPreviewFromUri(uri, 1200)
                 _beforeBitmap.value = sampled
 
-                // Tự động phân tích ảnh và nhận diện Preset thông minh
+                // 3. Tự động phân tích ảnh và nhận diện Preset thông minh
                 val detected = detectPresetFromBitmap(sampled)
                 _selectedPreset.value = detected
                 _isAutoDetected.value = true
@@ -178,7 +247,27 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             val name = queryFileName(uri) ?: "comic_${System.currentTimeMillis()}.cbz"
             _selectedFileName.value = name
-            _beforeBitmap.value = createMangaThumbnailPlaceholder(name)
+
+            // 1. Trích xuất trang bìa thật và nhận diện độ phân giải thật của tập truyện
+            val details = extractComicFirstPageAndDetails(uri)
+            val coverBmp = details.first
+            val bounds = details.second
+            val pageCount = details.third
+
+            if (bounds != null) {
+                _rawWidth.value = bounds.first
+                _rawHeight.value = bounds.second
+                _inputResolution.value = "${bounds.first} x ${bounds.second} px (Trang bìa)"
+            } else {
+                _rawWidth.value = 1200
+                _rawHeight.value = 1800
+                _inputResolution.value = "Chuẩn Manga"
+            }
+
+            _inputMetadataInfo.value = "Tập truyện • $pageCount trang • CBZ/ZIP"
+            updateTargetResolution()
+
+            _beforeBitmap.value = coverBmp ?: createMangaThumbnailPlaceholder(name)
 
             val detected = if (name.contains("color", true) || name.contains("manhwa", true) || name.contains("webtoon", true)) {
                 "Manga Màu"
@@ -201,9 +290,31 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
             val name = queryFileName(uri) ?: "video_${System.currentTimeMillis()}.mp4"
             _selectedFileName.value = name
 
-            val frame = extractVideoThumbnail(uri)
-            _beforeBitmap.value = frame ?: createVideoThumbnailPlaceholder(name)
+            val videoInfo = extractVideoDetails(uri)
+            val frame = videoInfo.first
+            val bounds = videoInfo.second
 
+            if (bounds != null) {
+                _rawWidth.value = bounds.first
+                _rawHeight.value = bounds.second
+                _inputResolution.value = "${bounds.first} x ${bounds.second} px"
+                val quality = when {
+                    bounds.first >= 3840 || bounds.second >= 3840 -> "4K UHD"
+                    bounds.first >= 1920 || bounds.second >= 1920 -> "Full HD"
+                    bounds.first >= 1280 || bounds.second >= 1280 -> "HD 720p"
+                    else -> "SD"
+                }
+                _inputMetadataInfo.value = "Video AI • $quality • 30 FPS"
+            } else {
+                _rawWidth.value = 1280
+                _rawHeight.value = 720
+                _inputResolution.value = "1280 x 720 px"
+                _inputMetadataInfo.value = "Video AI"
+            }
+
+            updateTargetResolution()
+
+            _beforeBitmap.value = frame ?: createVideoThumbnailPlaceholder(name)
             _selectedPreset.value = "Anime Video"
             _isAutoDetected.value = true
         }
@@ -449,6 +560,100 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
         return BitmapFactory.decodeFile(filePath, decodeOptions)
+    }
+
+    private fun decodeBoundsFromUri(uri: Uri): Pair<Int, Int>? {
+        return try {
+            val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            appContext.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, boundsOptions)
+            }
+            if (boundsOptions.outWidth > 0 && boundsOptions.outHeight > 0) {
+                Pair(boundsOptions.outWidth, boundsOptions.outHeight)
+            } else null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun extractComicFirstPageAndDetails(uri: Uri): Triple<Bitmap?, Pair<Int, Int>?, Int> {
+        var pageCount = 0
+        var firstPageBytes: ByteArray? = null
+        val imgExts = setOf("jpg", "jpeg", "png", "webp", "bmp")
+
+        try {
+            appContext.contentResolver.openInputStream(uri)?.use { input ->
+                ZipInputStream(BufferedInputStream(input)).use { zis ->
+                    var entry: ZipEntry? = zis.nextEntry
+                    while (entry != null) {
+                        if (!entry.isDirectory) {
+                            val name = entry.name.lowercase()
+                            val ext = name.substringAfterLast('.', "")
+                            if (ext in imgExts && !name.contains("__macosx") && !name.startsWith(".")) {
+                                pageCount++
+                                if (firstPageBytes == null) {
+                                    val bos = ByteArrayOutputStream()
+                                    val buffer = ByteArray(32 * 1024)
+                                    var read = zis.read(buffer)
+                                    while (read != -1) {
+                                        bos.write(buffer, 0, read)
+                                        read = zis.read(buffer)
+                                    }
+                                    firstPageBytes = bos.toByteArray()
+                                }
+                            }
+                        }
+                        zis.closeEntry()
+                        entry = zis.nextEntry
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
+
+        if (firstPageBytes != null) {
+            val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(firstPageBytes, 0, firstPageBytes.size, boundsOptions)
+            val bounds = if (boundsOptions.outWidth > 0 && boundsOptions.outHeight > 0) {
+                Pair(boundsOptions.outWidth, boundsOptions.outHeight)
+            } else null
+
+            val maxDim = maxOf(boundsOptions.outWidth.coerceAtLeast(1), boundsOptions.outHeight.coerceAtLeast(1))
+            var sampleSize = 1
+            while (maxDim / (sampleSize * 2) >= 1200) {
+                sampleSize *= 2
+            }
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val bmp = BitmapFactory.decodeByteArray(firstPageBytes, 0, firstPageBytes.size, decodeOptions)
+            return Triple(bmp, bounds, pageCount.coerceAtLeast(1))
+        }
+
+        return Triple(null, null, pageCount.coerceAtLeast(1))
+    }
+
+    private fun extractVideoDetails(uri: Uri): Pair<Bitmap?, Pair<Int, Int>?> {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(appContext, uri)
+            val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+            val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+            val bounds = if (w != null && h != null && w > 0 && h > 0) Pair(w, h) else null
+
+            val raw = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            val swBmp = if (raw != null) {
+                val copy = raw.copy(Bitmap.Config.ARGB_8888, false)
+                if (copy != raw) raw.recycle()
+                copy
+            } else null
+
+            Pair(swBmp, bounds)
+        } catch (_: Throwable) {
+            Pair(null, null)
+        } finally {
+            try { retriever.release() } catch (_: Throwable) {}
+        }
     }
 
     private fun createMangaThumbnailPlaceholder(name: String): Bitmap {

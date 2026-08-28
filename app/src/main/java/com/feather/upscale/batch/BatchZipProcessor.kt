@@ -142,7 +142,7 @@ class BatchZipProcessor(
         outputFile: File,
         startFromPageIndex: Int = 0,
         onProgress: ((BatchProgress) -> Unit)? = null,
-        onPreviewUpdate: ((Bitmap) -> Unit)? = null,
+        onPreviewUpdate: ((Bitmap, Bitmap) -> Unit)? = null,
         isPaused: () -> Boolean = { false },
         isCancelled: () -> Boolean = { false },
     ): File = withContext(Dispatchers.IO) {
@@ -170,6 +170,11 @@ class BatchZipProcessor(
                         decodeSafeBitmapFromStream(stream)
                     } ?: throw IllegalStateException("Không thể giải mã ảnh: ${page.entryName}")
 
+                    var origPageCopy: Bitmap? = null
+                    try {
+                        origPageCopy = originalBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                    } catch (_: Throwable) {}
+
                     // 2. Upscale trang ảnh qua TileProcessor với giới hạn 4K UHD chuẩn cho truyện tranh
                     val upscaledBitmap = tileProcessor.process(
                         bitmap = originalBitmap,
@@ -186,12 +191,19 @@ class BatchZipProcessor(
                                 )
                             )
                         },
-                        onPreviewUpdate = onPreviewUpdate,
+                        onPreviewUpdate = null,
                         isPaused = isPaused,
                         isCancelled = isCancelled
                     )
 
                     originalBitmap.recycle()
+
+                    if (origPageCopy != null) {
+                        try {
+                            val upscaledCopy = upscaledBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                            onPreviewUpdate?.invoke(upscaledCopy, origPageCopy)
+                        } catch (_: Throwable) {}
+                    }
 
                     // 3. Lưu trang ảnh dưới định dạng JPEG 92 chuẩn CBZ để tương thích 100% với mọi app đọc truyện
                     val pageOutFile = File(tempOutputDir, String.format("page_%04d.jpg", pageNumber))

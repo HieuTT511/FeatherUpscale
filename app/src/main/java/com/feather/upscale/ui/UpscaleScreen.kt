@@ -133,6 +133,9 @@ fun UpscaleScreen(
     val mobileModel by viewModel.mobileModel.collectAsState()
     val quantizationMode by viewModel.quantizationMode.collectAsState()
     val forceLowRam by viewModel.forceLowRam.collectAsState()
+    val inputResolution by viewModel.inputResolution.collectAsState()
+    val targetResolution by viewModel.targetResolution.collectAsState()
+    val inputMetadataInfo by viewModel.inputMetadataInfo.collectAsState()
     val upscaleState by viewModel.upscaleState.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -532,51 +535,109 @@ fun UpscaleScreen(
                 }
             }
 
-            // Thanh thông tin file đã chọn
+            // Thanh thông tin file đã chọn và độ phân giải thật
             if (selectedFileName != null) {
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = when {
-                                isVideo -> Icons.Default.PlayArrow
-                                isBatchZip -> Icons.Default.FolderZip
-                                else -> Icons.Default.Image
-                            },
-                            contentDescription = null,
-                            tint = when {
-                                isVideo -> EmeraldGpu
-                                isBatchZip -> CyanAccent
-                                else -> VioletPrimaryLight
-                            },
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = selectedFileName ?: "",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                            Text(
-                                text = when {
-                                    isVideo -> "Video Siêu Phân Giải AI (Bảo toàn âm thanh gốc)"
-                                    selectedFileName?.endsWith(".mobi", true) == true || selectedFileName?.endsWith(".prc", true) == true -> "Sách truyện MOBI / PRC (PalmDOC)"
-                                    isBatchZip -> "Tập tin nén truyện tranh (CBZ / ZIP)"
-                                    else -> "Đã nạp vào bộ nhớ đệm"
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = when {
+                                    isVideo -> Icons.Default.PlayArrow
+                                    isBatchZip -> Icons.Default.FolderZip
+                                    else -> Icons.Default.Image
                                 },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp
+                                contentDescription = null,
+                                tint = when {
+                                    isVideo -> EmeraldGpu
+                                    isBatchZip -> CyanAccent
+                                    else -> VioletPrimaryLight
+                                },
+                                modifier = Modifier.size(24.dp)
                             )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = selectedFileName ?: "",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = inputMetadataInfo ?: when {
+                                        isVideo -> "Video Siêu Phân Giải AI"
+                                        selectedFileName?.endsWith(".mobi", true) == true || selectedFileName?.endsWith(".prc", true) == true -> "Sách truyện MOBI / PRC"
+                                        isBatchZip -> "Tập tin nén truyện tranh (CBZ / ZIP)"
+                                        else -> "Ảnh gốc"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+
+                        // Chi tiết Độ phân giải Thực tế & Dự kiến
+                        if (inputResolution != null || targetResolution != null) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.background.copy(alpha = 0.6f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "Độ phân giải:",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = inputResolution ?: "Tự động",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+
+                                    if (targetResolution != null) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "➔",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = CyanAccent
+                                            )
+                                            Text(
+                                                text = targetResolution ?: "",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = EmeraldGpu
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

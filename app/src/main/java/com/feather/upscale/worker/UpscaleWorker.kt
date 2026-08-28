@@ -129,8 +129,8 @@ class UpscaleWorker(
                             tileSize = tileProcessor.tileSize
                         )
                     },
-                    onPreviewUpdate = { frameBitmap ->
-                        UpscaleStateManager.updateRuntimePreview(frameBitmap)
+                    onPreviewUpdate = { upscaledBmp, origBmp ->
+                        UpscaleStateManager.updateRuntimePreview(upscaledBmp, origBmp)
                     },
                     isPaused = { UpscaleStateManager.isPaused.value },
                     isCancelled = { UpscaleStateManager.isCancelled.value }
@@ -236,8 +236,8 @@ class UpscaleWorker(
                                 tileSize = progress.currentTileSize
                             )
                         },
-                        onPreviewUpdate = { previewBitmap ->
-                            UpscaleStateManager.updateRuntimePreview(previewBitmap)
+                        onPreviewUpdate = { upscaledBmp, origBmp ->
+                            UpscaleStateManager.updateRuntimePreview(upscaledBmp, origBmp)
                         },
                         isPaused = { UpscaleStateManager.isPaused.value },
                         isCancelled = { UpscaleStateManager.isCancelled.value }
@@ -293,8 +293,8 @@ class UpscaleWorker(
                                 tileSize = progress.currentTileSize
                             )
                         },
-                        onPreviewUpdate = { previewBitmap ->
-                            UpscaleStateManager.updateRuntimePreview(previewBitmap)
+                        onPreviewUpdate = { upscaledBmp, origBmp ->
+                            UpscaleStateManager.updateRuntimePreview(upscaledBmp, origBmp)
                         },
                         isPaused = { UpscaleStateManager.isPaused.value },
                         isCancelled = { UpscaleStateManager.isCancelled.value }

@@ -63,6 +63,9 @@ object UpscaleStateManager {
     private val _state = MutableStateFlow<UpscaleState>(UpscaleState.Idle)
     val state: StateFlow<UpscaleState> = _state.asStateFlow()
 
+    private val _runtimeBeforePreview = MutableStateFlow<Bitmap?>(null)
+    val runtimeBeforePreview: StateFlow<Bitmap?> = _runtimeBeforePreview.asStateFlow()
+
     private val _runtimePreview = MutableStateFlow<Bitmap?>(null)
     val runtimePreview: StateFlow<Bitmap?> = _runtimePreview.asStateFlow()
 
@@ -82,14 +85,26 @@ object UpscaleStateManager {
             _isCancelled.value = true
             _isPaused.value = false
             _runtimePreview.value = null
+            _runtimeBeforePreview.value = null
         } else if (newState is UpscaleState.Idle || newState is UpscaleState.Completed) {
             _isPaused.value = false
             _isCancelled.value = false
         }
     }
 
-    fun updateRuntimePreview(bitmap: Bitmap?) {
-        _runtimePreview.value = bitmap
+    fun updateRuntimePreview(afterBitmap: Bitmap?, beforeBitmap: Bitmap? = null) {
+        if (beforeBitmap != null) {
+            _runtimeBeforePreview.value = beforeBitmap
+        }
+        _runtimePreview.value = afterBitmap
+    }
+
+    fun reset() {
+        _state.value = UpscaleState.Idle
+        _runtimePreview.value = null
+        _runtimeBeforePreview.value = null
+        _isPaused.value = false
+        _isCancelled.value = false
     }
 
     fun pause() {
@@ -125,13 +140,7 @@ object UpscaleStateManager {
         _isCancelled.value = true
         _isPaused.value = false
         _runtimePreview.value = null
+        _runtimeBeforePreview.value = null
         _state.value = UpscaleState.Cancelled
-    }
-
-    fun reset() {
-        _isPaused.value = false
-        _isCancelled.value = false
-        _runtimePreview.value = null
-        _state.value = UpscaleState.Idle
     }
 }
