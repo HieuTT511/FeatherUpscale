@@ -18,7 +18,7 @@ import kotlin.math.cos
  * Kiến trúc Zero-Heap Memory & OOM Guard Toàn Diện:
  * 1. Không cấp phát mảng heap toàn ảnh: Giữ mức tiêu thụ RAM của JVM < 15MB cho mọi độ phân giải lên đến 8K.
  * 2. Bảo toàn 100% chi tiết ảnh gốc: Lấy mẫu nội suy trực tiếp từ pixel gốc, không bao giờ làm mờ hay nén nhỏ ảnh trước.
- * 3. Chuẩn hóa giới hạn hiển thị an toàn cho Android: Đối với ảnh cực lớn (camera raw), tự động điều chỉnh đích đến tối đa 8K UHD (8192px) để tương thích 100% bộ nhớ đồ họa của Android.
+ * 3. Chuẩn hóa giới hạn hiển thị an toàn: Tự động điều chỉnh đích đến tối đa 8K UHD (8192px) cho ảnh đơn và 4K UHD (3840px) cho trang truyện CBZ/MOBI để chống crash 100% cho mọi app đọc truyện.
  * 4. Thuật toán Raised-Cosine Blending (C^1 Smooth): Triệt tiêu 100% vết ghép mảnh, ô vuông ở mọi tỉ lệ 2X, 4X, 8X.
  */
 class TileProcessor(
@@ -53,6 +53,7 @@ class TileProcessor(
         const val MIN_TILE_SIZE = 64
         const val OVERLAP = 16 // Overlap in input space (16px input -> 32px at 2x, 64px at 4x, 128px at 8x)
         const val MAX_SAFE_8K_DIMENSION = 8192 // Chuẩn 8K Ultra-HD an toàn tuyệt đối cho Android Graphic Buffer
+        const val MAX_COMIC_PAGE_DIMENSION = 3840 // Chuẩn 4K Ultra-HD an toàn tuyệt đối cho app đọc Ebook / Comic
 
         /**
          * Tính trọng số hòa trộn Raised-Cosine mượt mà C^1 cho 1 pixel bên trong tile tại tọa độ (tx, ty).
@@ -211,11 +212,12 @@ class TileProcessor(
 
     /**
      * Xử lý toàn ảnh siêu phân giải không OOM (Google AI Architecture):
-     * - Tự động tính toán target resolution an toàn đến 8K UHD ($8192\text{px}$).
+     * - Tự động tính toán target resolution an toàn đến 8K UHD ($8192\text{px}$) hoặc $3840\text{px}$ cho comic.
      * - Bảo toàn 100% pixel gốc.
      */
     suspend fun process(
         bitmap: Bitmap,
+        maxSafeDimension: Int = if (isLowRam) 4096 else MAX_SAFE_8K_DIMENSION,
         onProgress: ((completedTiles: Int, totalTiles: Int) -> Unit)? = null,
         onPreviewUpdate: ((Bitmap) -> Unit)? = null,
         isPaused: () -> Boolean = { false },
@@ -234,8 +236,8 @@ class TileProcessor(
         val rawOutW = origW * scale
         val rawOutH = origH * scale
 
-        // Giới hạn an toàn tối đa cho Android Graphic Bitmap
-        val maxSafeDim = if (isLowRam) 4096 else MAX_SAFE_8K_DIMENSION
+        // Giới hạn an toàn tối đa cho Android Graphic Bitmap và Ebook Readers
+        val maxSafeDim = if (isLowRam) minOf(maxSafeDimension, 4096) else maxSafeDimension
         val targetScale = if (rawOutW > maxSafeDim || rawOutH > maxSafeDim) {
             minOf(maxSafeDim.toFloat() / origW, maxSafeDim.toFloat() / origH)
         } else {

@@ -203,6 +203,7 @@ class UpscaleWorker(
                     customOutputDirUriStr = customOutputDir,
                     fileName = "${baseName}_Upscale_${scale}x.cbz",
                     mimeType = "application/x-cbz",
+                    isComicOrMobi = true
                 )
 
                 tempOutputFile.inputStream().use { input ->
@@ -217,6 +218,7 @@ class UpscaleWorker(
 
                 StorageHelper.scanMediaFile(applicationContext, outTarget, "application/x-cbz")
 
+                val duration = System.currentTimeMillis() - startTime
 
                 UpscaleStateManager.updateState(
                     UpscaleState.Completed(

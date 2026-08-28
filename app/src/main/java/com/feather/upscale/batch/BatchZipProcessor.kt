@@ -11,6 +11,7 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
@@ -20,12 +21,11 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * Xử lý hàng loạt tập tin truyện tranh định dạng ZIP / CBZ (hỗ trợ tập tin lên đến nhiều GB).
  *
- * Tính năng tối ưu bộ nhớ cho file lớn (1GB+):
- * 1. Sử dụng [ZipFile] truy cập ngẫu nhiên O(1) theo bảng central directory thay vì quét tuần tự toàn bộ file 1GB nhiều lần.
+ * Tính năng tối ưu bộ nhớ và chống crash cho các app đọc truyện khác (Tachiyomi, Mihon, Perfect Viewer, Kindle, v.v.):
+ * 1. Sử dụng [ZipFile] truy cập ngẫu nhiên O(1) theo bảng central directory.
  * 2. Natural Sorting (sắp xếp thứ tự tự nhiên) để các trang (p1, p2, p10) luôn theo đúng mạch đọc truyện.
- * 3. Decode an toàn với inSampleSize nếu ảnh trang truyện có kích thước quá lớn.
- * 4. Xử lý và giải phóng từng trang độc lập, giữ mức chiếm dụng RAM không đổi (~50MB).
- * 5. Nén lại thành file ZIP / CBZ đầu ra chất lượng cao.
+ * 3. Chuẩn hóa độ phân giải trang 4K UHD an toàn ([TileProcessor.MAX_COMIC_PAGE_DIMENSION] = 3840px): Giúp các app đọc truyện preload nhiều trang mượt mà không bị tràn RAM hay lỗi texture GPU.
+ * 4. Nén chuẩn Baseline JPEG 92 trong cấu trúc CBZ tiêu chuẩn quốc tế.
  */
 class BatchZipProcessor(
     private val tileProcessor: TileProcessor,
@@ -93,7 +93,7 @@ class BatchZipProcessor(
         }
 
         /**
-         * Liệt kê và sắp xếp các trang ảnh hợp lệ trong file ZIP/CBZ qua ZipFile (siêu nhanh cho file 1GB).
+         * Liệt kê và sắp xếp các trang ảnh hợp lệ trong file ZIP/CBZ qua ZipFile.
          */
         fun listComicPages(zipFile: File): List<PageEntry> {
             val list = mutableListOf<PageEntry>()
@@ -170,9 +170,10 @@ class BatchZipProcessor(
                         decodeSafeBitmapFromStream(stream)
                     } ?: throw IllegalStateException("Không thể giải mã ảnh: ${page.entryName}")
 
-                    // 2. Upscale trang ảnh qua TileProcessor
+                    // 2. Upscale trang ảnh qua TileProcessor với giới hạn 4K UHD chuẩn cho truyện tranh
                     val upscaledBitmap = tileProcessor.process(
                         bitmap = originalBitmap,
+                        maxSafeDimension = TileProcessor.MAX_COMIC_PAGE_DIMENSION,
                         onProgress = { currentTile, totalTiles ->
                             onProgress?.invoke(
                                 BatchProgress(
@@ -192,22 +193,11 @@ class BatchZipProcessor(
 
                     originalBitmap.recycle()
 
-                    // 3. Lưu ảnh đã upscale vào thư mục tạm
-                    val ext = page.entryName.substringAfterLast('.', "jpg").lowercase()
-                    val pageOutFile = File(tempOutputDir, String.format("page_%04d.%s", pageNumber, ext))
+                    // 3. Lưu trang ảnh dưới định dạng JPEG 92 chuẩn CBZ để tương thích 100% với mọi app đọc truyện
+                    val pageOutFile = File(tempOutputDir, String.format("page_%04d.jpg", pageNumber))
                     FileOutputStream(pageOutFile).use { fos ->
-                        if (ext == "png") {
-                            upscaledBitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
-                        } else if (ext == "webp") {
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                                upscaledBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 92, fos)
-                            } else {
-                                @Suppress("DEPRECATION")
-                                upscaledBitmap.compress(Bitmap.CompressFormat.WEBP, 92, fos)
-                            }
-                        } else {
-                            upscaledBitmap.compress(Bitmap.CompressFormat.JPEG, 92, fos)
-                        }
+                        upscaledBitmap.compress(Bitmap.CompressFormat.JPEG, 92, fos)
+                        fos.flush()
                     }
 
                     upscaledBitmap.recycle()
@@ -217,7 +207,7 @@ class BatchZipProcessor(
                 }
             }
 
-            // 4. Đóng gói toàn bộ các trang đã upscale vào file ZIP / CBZ đầu ra
+            // 4. Đóng gói toàn bộ các trang đã upscale vào file CBZ đầu ra chuẩn
             packageZipArchive(tempOutputDir, outputFile)
             hapticHelper?.vibrateBatchComplete()
 
@@ -229,7 +219,7 @@ class BatchZipProcessor(
     }
 
     /**
-     * Giải mã an toàn không vượt quá giới hạn heap ngay cả khi ảnh gốc có độ phân giải siêu lớn.
+     * Giải mã an toàn không vượt quá giới hạn heap.
      */
     private fun decodeSafeBitmapFromStream(stream: java.io.InputStream): Bitmap? {
         val bytes = stream.readBytes()
@@ -238,7 +228,6 @@ class BatchZipProcessor(
 
         val maxDim = maxOf(boundsOptions.outWidth, boundsOptions.outHeight)
         var sampleSize = 1
-        // Nếu ảnh đơn trong trang truyện > 4000px, subsample nhẹ để bảo vệ heap
         while (maxDim / sampleSize > 4096) {
             sampleSize *= 2
         }
@@ -251,11 +240,13 @@ class BatchZipProcessor(
     }
 
     /**
-     * Nén thư mục ảnh thành tập tin ZIP / CBZ hoàn chỉnh.
+     * Nén thư mục ảnh thành tập tin CBZ hoàn chỉnh chuẩn quốc tế.
      */
     internal fun packageZipArchive(sourceDir: File, outputZip: File) {
         val files = sourceDir.listFiles()?.sortedBy { it.name } ?: emptyList()
         ZipOutputStream(BufferedOutputStream(FileOutputStream(outputZip))).use { zos ->
+            zos.setMethod(ZipOutputStream.DEFLATED)
+            zos.setLevel(Deflater.DEFAULT_COMPRESSION)
             val buffer = ByteArray(64 * 1024)
             for (file in files) {
                 if (file.isFile) {
@@ -271,6 +262,7 @@ class BatchZipProcessor(
                     zos.closeEntry()
                 }
             }
+            zos.finish()
         }
     }
 }

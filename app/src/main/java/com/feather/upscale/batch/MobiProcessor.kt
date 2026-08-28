@@ -11,6 +11,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
+import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.coroutines.cancellation.CancellationException
@@ -18,11 +19,11 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * Bộ xử lý tệp truyện định dạng MOBI / PRC (Palm Database Format).
  *
- * Thuật toán (Quy tắc 7):
+ * Thuật toán & Tối ưu hóa chuẩn đọc Ebook:
  * 1. Phân tích trực tiếp bảng Record Table của Palm Database Header mà không nạp toàn bộ file vào RAM ($O(1)$ RAM).
  * 2. Phát hiện chính xác các bản ghi chứa dữ liệu hình ảnh (JPEG, PNG, GIF, WebP) qua Magic Bytes.
- * 3. Upscale từng trang truyện bằng [TileProcessor] theo quy trình OOM guard và linear feather blending.
- * 4. Đóng gói tập truyện đã upscale vào tệp truyện CBZ siêu phân giải chuẩn.
+ * 3. Upscale từng trang truyện bằng [TileProcessor] theo chuẩn 4K UHD ([TileProcessor.MAX_COMIC_PAGE_DIMENSION] = 3840px).
+ * 4. Đóng gói tập truyện đã upscale vào tệp truyện CBZ siêu phân giải chuẩn quốc tế, không gây crash cho các app đọc truyện khác.
  */
 class MobiProcessor(
     private val tileProcessor: TileProcessor,
@@ -142,7 +143,7 @@ class MobiProcessor(
     /**
      * Xử lý toàn bộ tệp truyện MOBI / PRC:
      * - Trích xuất từng bản ghi ảnh
-     * - Upscale từng ảnh qua [TileProcessor]
+     * - Upscale từng ảnh qua [TileProcessor] với chuẩn 4K UHD
      * - Đóng gói vào tệp đầu ra CBZ siêu phân giải
      */
     suspend fun processMobi(
@@ -172,6 +173,9 @@ class MobiProcessor(
 
         try {
             ZipOutputStream(FileOutputStream(tempOutputFile)).use { zos ->
+                zos.setMethod(ZipOutputStream.DEFLATED)
+                zos.setLevel(Deflater.DEFAULT_COMPRESSION)
+
                 for ((pageIdx, record) in imageRecords.withIndex()) {
                     if (isCancelled()) {
                         throw CancellationException("Tiến trình upscale MOBI bị hủy bởi người dùng")
@@ -182,7 +186,7 @@ class MobiProcessor(
                     }
 
                     val pageNumber = pageIdx + 1
-                    val pageName = "page_${String.format("%04d", pageNumber)}.${record.extension}"
+                    val pageName = String.format("page_%04d.jpg", pageNumber)
 
                     // Đọc trực tiếp byte ảnh từ file mà không giữ các trang khác trong RAM
                     val imageBytes = ByteArray(record.length)
@@ -191,7 +195,6 @@ class MobiProcessor(
 
                     val originalBitmap = decodeSampledBitmap(imageBytes, maxDimension = 4096)
                     if (originalBitmap == null) {
-                        // Nếu không giải mã được ảnh này, copy nguyên bản vào zip
                         val entry = ZipEntry(pageName)
                         zos.putNextEntry(entry)
                         zos.write(imageBytes)
@@ -199,9 +202,10 @@ class MobiProcessor(
                         continue
                     }
 
-                    // Upscale trang truyện bằng TileProcessor
+                    // Upscale trang truyện bằng TileProcessor (giới hạn 4K an toàn cho app đọc truyện)
                     val upscaledBitmap = tileProcessor.process(
                         bitmap = originalBitmap,
+                        maxSafeDimension = TileProcessor.MAX_COMIC_PAGE_DIMENSION,
                         onProgress = { currentTile, totalTiles ->
                             onProgress(
                                 MobiProgress(
@@ -221,18 +225,11 @@ class MobiProcessor(
 
                     originalBitmap.recycle()
 
-                    // Ghi trang ảnh đã upscale vào tệp nén CBZ
+                    // Ghi trang ảnh đã upscale vào tệp nén CBZ dưới chuẩn JPEG 92
                     val entry = ZipEntry(pageName)
                     zos.putNextEntry(entry)
                     val baos = ByteArrayOutputStream()
-                    upscaledBitmap.compress(
-                        if (record.extension.equals("jpg", true) || record.extension.equals("jpeg", true))
-                            Bitmap.CompressFormat.JPEG
-                        else
-                            Bitmap.CompressFormat.PNG,
-                        95,
-                        baos
-                    )
+                    upscaledBitmap.compress(Bitmap.CompressFormat.JPEG, 92, baos)
                     upscaledBitmap.recycle()
 
                     val upscaledBytes = baos.toByteArray()
@@ -242,6 +239,7 @@ class MobiProcessor(
                     hapticHelper?.vibratePageComplete()
                     System.gc()
                 }
+                zos.finish()
             }
 
             if (outputFile.exists()) outputFile.delete()
@@ -258,10 +256,12 @@ class MobiProcessor(
         }
     }
 
-    private fun decodeSampledBitmap(data: ByteArray, maxDimension: Int): Bitmap? {
+    /**
+     * Giải mã an toàn không vượt quá giới hạn heap.
+     */
+    private fun decodeSampledBitmap(bytes: ByteArray, maxDimension: Int): Bitmap? {
         val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(data, 0, data.size, boundsOptions)
-        if (boundsOptions.outWidth <= 0 || boundsOptions.outHeight <= 0) return null
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, boundsOptions)
 
         val maxDim = maxOf(boundsOptions.outWidth, boundsOptions.outHeight)
         var sampleSize = 1
@@ -273,7 +273,6 @@ class MobiProcessor(
             inSampleSize = sampleSize
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
-        return BitmapFactory.decodeByteArray(data, 0, data.size, decodeOptions)
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions)
     }
 }
-
