@@ -1,5 +1,7 @@
 package com.feather.upscale.ui
 
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -39,16 +41,21 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -82,9 +89,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import com.feather.upscale.ui.theme.AmberWarning
 import com.feather.upscale.ui.theme.CyanAccent
 import com.feather.upscale.ui.theme.EmeraldGpu
@@ -92,6 +101,7 @@ import com.feather.upscale.ui.theme.RoseError
 import com.feather.upscale.ui.theme.VioletPrimary
 import com.feather.upscale.ui.theme.VioletPrimaryLight
 import com.feather.upscale.worker.UpscaleState
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,6 +109,7 @@ fun UpscaleScreen(
     viewModel: UpscaleViewModel,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     val selectedUri by viewModel.selectedUri.collectAsState()
     val selectedFileName by viewModel.selectedFileName.collectAsState()
     val isBatchZip by viewModel.isBatchZip.collectAsState()
@@ -166,7 +177,7 @@ fun UpscaleScreen(
 
                         Column {
                             Text(
-                                text = "FeatherUpscale",
+                                text = "UpScale",
                                 fontWeight = FontWeight.ExtraBold,
                                 style = MaterialTheme.typography.titleLarge,
                                 letterSpacing = (-0.5).sp
@@ -224,7 +235,7 @@ fun UpscaleScreen(
                 .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. Preview Split Slider (Hero Component)
+            // 1. Preview Split Slider (Hero Component - Hỗ trợ Live Runtime Rendering)
             PreviewSlider(
                 beforeBitmap = beforeBitmap,
                 afterBitmap = afterBitmap,
@@ -367,7 +378,7 @@ fun UpscaleScreen(
                                 maxLines = 1
                             )
                             Text(
-                                text = if (isBatchZip) "Tập tin nén truyện tranh" else "Đã nạp vào bộ đệm",
+                                text = if (isBatchZip) "Tập tin nén truyện tranh" else "Đã nạp vào bộ nhớ đệm",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp
@@ -535,7 +546,7 @@ fun UpscaleScreen(
                 }
             }
 
-            // 5. Card Tiến độ Thời gian thực (Live Dashboard & Telemetry)
+            // 5. Card Tiến độ Thời gian thực & Thẻ Kết Quả Lưu Tệp Mới
             AnimatedVisibility(
                 visible = isProcessing || isPaused || upscaleState is UpscaleState.Completed || upscaleState is UpscaleState.Error,
                 enter = fadeIn() + scaleIn(),
@@ -554,9 +565,9 @@ fun UpscaleScreen(
                     border = BorderStroke(
                         1.dp,
                         when (upscaleState) {
-                            is UpscaleState.Completed -> EmeraldGpu.copy(alpha = 0.4f)
-                            is UpscaleState.Error -> RoseError.copy(alpha = 0.4f)
-                            is UpscaleState.Paused -> AmberWarning.copy(alpha = 0.4f)
+                            is UpscaleState.Completed -> EmeraldGpu.copy(alpha = 0.5f)
+                            is UpscaleState.Error -> RoseError.copy(alpha = 0.5f)
+                            is UpscaleState.Paused -> AmberWarning.copy(alpha = 0.5f)
                             else -> VioletPrimaryLight.copy(alpha = 0.4f)
                         }
                     ),
@@ -603,7 +614,7 @@ fun UpscaleScreen(
                                     color = VioletPrimaryLight
                                 )
 
-                                // Telemetry Grid 4 ô
+                                // Telemetry Grid 3 ô
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -655,20 +666,95 @@ fun UpscaleScreen(
                             }
 
                             is UpscaleState.Completed -> {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldGpu, modifier = Modifier.size(28.dp))
-                                    Column {
-                                        Text(
-                                            text = "Upscale Hoàn Tất Xuất Sắc!",
-                                            fontWeight = FontWeight.ExtraBold,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = EmeraldGpu
-                                        )
-                                        Text(
-                                            text = "Thời gian xử lý: ${state.totalDurationMs / 1000}s",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                // KHU VỰC THÔNG TIN TỆP MỚI VÀ NÚT MỞ / CHIA SẺ
+                                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldGpu, modifier = Modifier.size(28.dp))
+                                        Column {
+                                            Text(
+                                                text = "🎉 Upscale Thành Công!",
+                                                fontWeight = FontWeight.ExtraBold,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = EmeraldGpu
+                                            )
+                                            Text(
+                                                text = "Tệp mới đã được tạo • Thời gian: ${state.totalDurationMs / 1000}s",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+
+                                    // Hộp ghi chú bảo toàn ảnh gốc
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Icon(imageVector = Icons.Default.Info, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(16.dp))
+                                                Text(
+                                                    text = "Tệp gốc được giữ nguyên 100% (Không ghi đè)",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = CyanAccent
+                                                )
+                                            }
+
+                                            Text(
+                                                text = "📄 Tên tệp mới: ${state.outputFileName.ifEmpty { "upscaled_result.png" }}",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(
+                                                text = "📐 Độ phân giải: ${state.outputResolution.ifEmpty { "4K UHD" }} • Dung lượng: ${state.outputFileSize.ifEmpty { "Đã tối ưu" }}",
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            if (state.outputPath != null) {
+                                                Text(
+                                                    text = "📁 Vị trí lưu: ${File(state.outputPath).parent ?: "Thư mục UpScale"}",
+                                                    fontSize = 11.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Nút Mở tệp / Xem ảnh & Chia sẻ
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Button(
+                                            onClick = { openFile(context, state.outputPath) },
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(14.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldGpu)
+                                        ) {
+                                            Icon(imageVector = Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Xem ảnh", fontWeight = FontWeight.Bold)
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = { shareFile(context, state.outputPath) },
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(14.dp)
+                                        ) {
+                                            Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Chia sẻ", fontWeight = FontWeight.Bold)
+                                        }
                                     }
                                 }
                             }
@@ -777,4 +863,58 @@ fun UpscaleScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
+
+/**
+ * Tiện ích mở tệp bằng Intent an toàn qua FileProvider
+ */
+private fun openFile(context: Context, filePath: String?) {
+    if (filePath == null) return
+    val file = File(filePath)
+    if (!file.exists()) return
+    try {
+        val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", file)
+        val mimeType = if (file.extension.equals("cbz", true) || file.extension.equals("zip", true)) {
+            "application/zip"
+        } else {
+            "image/*"
+        }
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mimeType)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    } catch (_: Throwable) {
+        try {
+            val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "*/*")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(Intent.createChooser(intent, "Mở tệp bằng"))
+        } catch (_: Throwable) {}
+    }
+}
+
+/**
+ * Tiện ích chia sẻ tệp qua FileProvider
+ */
+private fun shareFile(context: Context, filePath: String?) {
+    if (filePath == null) return
+    val file = File(filePath)
+    if (!file.exists()) return
+    try {
+        val uri = FileProvider.getUriForFile(context, "com.feather.upscale.fileprovider", file)
+        val mimeType = if (file.extension.equals("cbz", true) || file.extension.equals("zip", true)) {
+            "application/zip"
+        } else {
+            "image/png"
+        }
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(Intent.createChooser(intent, "Chia sẻ kết quả Upscale"))
+    } catch (_: Throwable) {}
 }

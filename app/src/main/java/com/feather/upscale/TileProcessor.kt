@@ -17,6 +17,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * OOM guard cho máy 4GB RAM & file lớn (lên tới 1GB):
  * - Giới hạn kích thước output tối đa an toàn (MAX_OUTPUT_DIMENSION = 4096px / 4K UHD) để tránh mảng IntArray 1.5GB tràn heap.
  * - Hỗ trợ và tự động chuyển đổi Hardware Bitmap sang Software Bitmap để tránh crash `getPixels()`.
+ * - Hỗ trợ callback onPreviewUpdate tạo ảnh xem trước thời gian thực (Live Runtime Upscale Preview).
  * - Single-tile memory footprint: blend trực tiếp vào master buffer thay vì cache toàn bộ tiles.
  * - Check available memory trước mỗi tile.
  * - OutOfMemoryError -> tự retry với tile nhỏ hơn (128 -> 64).
@@ -135,6 +136,31 @@ class TileProcessor(
             val fEnd = if (skipRightEdge) 1f else minOf(1f, (offsetFromEnd + 1) / OVERLAP.toFloat())
             return fStart.coerceIn(0f, 1f).coerceAtMost(fEnd.coerceIn(0f, 1f))
         }
+
+        /** Tạo preview bitmap kích thước nhẹ phục vụ hiển thị thời gian thực */
+        internal fun createPreviewFromPixels(
+            pixels: IntArray,
+            srcW: Int,
+            srcH: Int,
+            targetW: Int,
+            targetH: Int
+        ): Bitmap {
+            val previewPixels = IntArray(targetW * targetH)
+            val scaleX = srcW.toFloat() / targetW
+            val scaleY = srcH.toFloat() / targetH
+            for (y in 0 until targetH) {
+                val sy = (y * scaleY).toInt().coerceIn(0, srcH - 1)
+                val srcRow = sy * srcW
+                val dstRow = y * targetW
+                for (x in 0 until targetW) {
+                    val sx = (x * scaleX).toInt().coerceIn(0, srcW - 1)
+                    previewPixels[dstRow + x] = pixels[srcRow + sx]
+                }
+            }
+            return Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888).apply {
+                setPixels(previewPixels, 0, targetW, 0, 0, targetW, targetH)
+            }
+        }
     }
 
     /** Tính tile specs (tọa độ gốc, không scale) từ W x H. */
@@ -166,6 +192,7 @@ class TileProcessor(
     suspend fun process(
         bitmap: Bitmap,
         onProgress: ((completedTiles: Int, totalTiles: Int) -> Unit)? = null,
+        onPreviewUpdate: ((Bitmap) -> Unit)? = null,
         isPaused: () -> Boolean = { false },
         isCancelled: () -> Boolean = { false },
     ): Bitmap = withContext(Dispatchers.Default) {
@@ -178,7 +205,7 @@ class TileProcessor(
             while (true) {
                 try {
                     return@withContext processWithTileSize(
-                        safeInputBitmap, currentTileSize, onProgress, isPaused, isCancelled
+                        safeInputBitmap, currentTileSize, onProgress, onPreviewUpdate, isPaused, isCancelled
                     )
                 } catch (e: OutOfMemoryError) {
                     if (currentTileSize > MIN_TILE_SIZE) {
@@ -231,6 +258,7 @@ class TileProcessor(
         bitmap: Bitmap,
         currentTileSize: Int,
         onProgress: ((completedTiles: Int, totalTiles: Int) -> Unit)?,
+        onPreviewUpdate: ((Bitmap) -> Unit)?,
         isPaused: () -> Boolean,
         isCancelled: () -> Boolean,
     ): Bitmap {
@@ -296,6 +324,16 @@ class TileProcessor(
             blendTileIntoOutput(outputPixels, covered, tile, outW, outH)
 
             onProgress?.invoke(index + 1, totalTiles)
+
+            // Cập nhật ảnh Preview thời gian thực (Live Runtime Upscale Preview)
+            if (onPreviewUpdate != null && (index % 2 == 0 || index == totalTiles - 1)) {
+                try {
+                    val previewW = minOf(outW, 1080)
+                    val previewH = minOf(outH, 1080)
+                    val previewBmp = createPreviewFromPixels(outputPixels, outW, outH, previewW, previewH)
+                    onPreviewUpdate.invoke(previewBmp)
+                } catch (_: Throwable) {}
+            }
         }
 
         return Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888).apply {

@@ -3,6 +3,7 @@ package com.feather.upscale.worker
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Environment
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -14,14 +15,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.text.DecimalFormat
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * WorkManager CoroutineWorker chạy quá trình Upscale nền (Single Image / Batch ZIP).
  *
+ * - Hỗ trợ Live Preview cập nhật ảnh thời gian thực khi tile đang render.
+ * - Lưu file mới rõ ràng (không đè file gốc) vào thư mục Pictures/UpScale hoặc Downloads/UpScale.
  * - Hỗ trợ Foreground Service an toàn với notification thanh tiến độ.
  * - Tương tác hai chiều với [UpscaleStateManager] cho phép Pause / Resume / Cancel.
- * - Tự động retry với tile size nhỏ hơn khi gặp áp lực RAM / OOM.
  */
 class UpscaleWorker(
     appContext: Context,
@@ -82,9 +85,10 @@ class UpscaleWorker(
             if (mode == MODE_BATCH_ARCHIVE) {
                 // Batch ZIP / CBZ mode
                 val inputFile = File(inputPath)
-                val outputPath = inputData.getString(KEY_OUTPUT_PATH)
-                    ?: File(inputFile.parentFile, "${inputFile.nameWithoutExtension}_upscaled_${scale}x.cbz").absolutePath
-                val outputFile = File(outputPath)
+                val baseDir = applicationContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                    ?: File(applicationContext.filesDir, "downloads")
+                val targetDir = File(baseDir, "UpScale").apply { mkdirs() }
+                val outputFile = File(targetDir, "${inputFile.nameWithoutExtension}_upscaled_${scale}x.cbz")
 
                 val batchProcessor = BatchZipProcessor(
                     tileProcessor = tileProcessor,
@@ -142,11 +146,16 @@ class UpscaleWorker(
                 )
 
                 val duration = System.currentTimeMillis() - startTime
+                val fileSizeFormatted = formatFileSize(outputFile.length())
                 UpscaleStateManager.updateState(
                     UpscaleState.Completed(
                         totalPages = 1,
                         totalDurationMs = duration,
-                        outputPath = outputFile.absolutePath
+                        outputPath = outputFile.absolutePath,
+                        outputFileName = outputFile.name,
+                        outputResolution = "Batch Comic Book (${scale}X)",
+                        outputFileSize = fileSizeFormatted,
+                        isNewFile = true
                     )
                 )
 
@@ -158,9 +167,10 @@ class UpscaleWorker(
                 val originalBitmap = decodeSafeBitmapFromFile(inputPath)
                     ?: return@withContext Result.failure(workDataOf("error" to "Không giải mã được ảnh $inputPath"))
 
-                val outputPath = inputData.getString(KEY_OUTPUT_PATH)
-                    ?: File(inputFile.parentFile, "${inputFile.nameWithoutExtension}_upscaled_${scale}x.png").absolutePath
-                val outputFile = File(outputPath)
+                val baseDir = applicationContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+                    ?: File(applicationContext.filesDir, "pictures")
+                val targetDir = File(baseDir, "UpScale").apply { mkdirs() }
+                val outputFile = File(targetDir, "${inputFile.nameWithoutExtension}_upscaled_${scale}x.png")
 
                 UpscaleStateManager.updateState(
                     UpscaleState.Processing(
@@ -200,13 +210,20 @@ class UpscaleWorker(
                         )
                         setProgressAsync(workDataOf(KEY_PROGRESS_PERCENT to (fraction * 100).toInt()))
                     },
+                    onPreviewUpdate = { previewBmp ->
+                        // Cập nhật trực tiếp ảnh Preview thời gian thực vào Slider!
+                        UpscaleStateManager.updateRuntimePreview(previewBmp)
+                    },
                     isPaused = { isStopped || UpscaleStateManager.isPaused.value },
                     isCancelled = { isStopped || UpscaleStateManager.isCancelled.value }
                 )
 
+                val outW = upscaled.width
+                val outH = upscaled.height
+
                 originalBitmap.recycle()
 
-                // Lưu ảnh đầu ra
+                // Lưu ảnh đầu ra vào file mới
                 FileOutputStream(outputFile).use { fos ->
                     upscaled.compress(Bitmap.CompressFormat.PNG, 100, fos)
                 }
@@ -215,11 +232,18 @@ class UpscaleWorker(
                 hapticHelper.vibratePageComplete()
 
                 val duration = System.currentTimeMillis() - startTime
+                val fileSizeFormatted = formatFileSize(outputFile.length())
+                val resolutionStr = "${outW}x${outH}" + if (outW >= 3840 || outH >= 3840) " (4K UHD)" else ""
+
                 UpscaleStateManager.updateState(
                     UpscaleState.Completed(
                         totalPages = 1,
                         totalDurationMs = duration,
-                        outputPath = outputFile.absolutePath
+                        outputPath = outputFile.absolutePath,
+                        outputFileName = outputFile.name,
+                        outputResolution = resolutionStr,
+                        outputFileSize = fileSizeFormatted,
+                        isNewFile = true
                     )
                 )
 
@@ -261,5 +285,13 @@ class UpscaleWorker(
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
         return BitmapFactory.decodeFile(path, decodeOptions)
+    }
+
+    private fun formatFileSize(bytes: Long): String {
+        if (bytes <= 0) return "0 B"
+        val units = arrayOf("B", "KB", "MB", "GB")
+        val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.size - 1)
+        val df = DecimalFormat("#,##0.#")
+        return "${df.format(bytes / Math.pow(1024.0, digitGroups.toDouble()))} ${units[digitGroups]}"
     }
 }

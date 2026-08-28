@@ -62,7 +62,16 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
     val upscaleState: StateFlow<UpscaleState> = UpscaleStateManager.state
 
     init {
-        // Lắng nghe trạng thái hoàn tất để nạp ảnh kết quả vào Preview Slider
+        // 1. Lắng nghe runtime preview thời gian thực khi đang render từng tile
+        viewModelScope.launch {
+            UpscaleStateManager.runtimePreview.collect { previewBmp ->
+                if (previewBmp != null) {
+                    _afterBitmap.value = previewBmp
+                }
+            }
+        }
+
+        // 2. Lắng nghe trạng thái hoàn tất để nạp ảnh kết quả sắc nét hoàn chỉnh
         viewModelScope.launch {
             UpscaleStateManager.state.collect { state ->
                 if (state is UpscaleState.Completed) {
@@ -127,6 +136,7 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                UpscaleStateManager.reset()
                 UpscaleStateManager.updateState(
                     UpscaleState.Processing(
                         currentPage = 1,

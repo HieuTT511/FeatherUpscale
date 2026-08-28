@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.feather.upscale.ui.theme.CyanAccent
+import com.feather.upscale.ui.theme.EmeraldGpu
 import com.feather.upscale.ui.theme.VioletPrimary
 import com.feather.upscale.ui.theme.VioletPrimaryLight
 import kotlin.math.abs
@@ -76,11 +77,11 @@ import kotlin.math.roundToInt
  * Thành phần so sánh Before / After đạt chuẩn UX Modern Android 2026.
  *
  * Tính năng cao cấp:
+ * - Hỗ trợ Live Runtime Rendering: Hiển thị ngay ảnh AI upscaled thời gian thực khi đang render.
  * - Kéo trượt ngang với vật lý mượt mà, hỗ trợ Double-Tap để căn giữa 50%.
  * - Rung Haptic phản hồi khi lướt qua mốc 50%.
  * - Hiển thị kích thước độ phân giải thực tế (ví dụ 800x1200 -> 3200x4800 4K).
  * - Nhãn kính mờ Glassmorphic với viền gradient.
- * - Placeholder chuyển động mượt mà khi chưa có ảnh.
  */
 @Composable
 fun PreviewSlider(
@@ -113,6 +114,16 @@ fun PreviewSlider(
         label = "shimmerOffset"
     )
 
+    val livePulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "livePulseAlpha"
+    )
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -142,9 +153,6 @@ fun PreviewSlider(
                     onTap = { offset ->
                         val target = (offset.x / size.width.toFloat()).coerceIn(0.02f, 0.98f)
                         rawSplitFraction = target
-                    },
-                    onPress = {
-                        // Nhấn giữ để xem toàn bộ ảnh gốc
                     }
                 )
             }
@@ -194,7 +202,7 @@ fun PreviewSlider(
                     )
                 }
 
-                // 2. Nửa Sau (Upscaled) - Phía bên phải
+                // 2. Nửa Sau (Upscaled / Live Runtime Preview) - Phía bên phải
                 val rightClip = Path().apply {
                     addRect(Rect(splitX, 0f, canvasWidth, canvasHeight))
                 }
@@ -343,7 +351,7 @@ fun PreviewSlider(
                         }
                     }
                     Text(
-                        text = "Khu vực xem trước ảnh Before / After",
+                        text = "Khu vực so sánh ảnh Before / After",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -387,28 +395,46 @@ fun PreviewSlider(
             }
         }
 
-        // Nhãn UPSCALE (After) - Glassmorphic Pill bên phải
+        // Nhãn UPSCALE (After / Live Rendering) - Glassmorphic Pill bên phải
         Surface(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(12.dp),
             shape = RoundedCornerShape(12.dp),
-            color = Color(0xFF4C1D95).copy(alpha = 0.8f),
-            border = BorderStroke(1.dp, VioletPrimaryLight.copy(alpha = 0.4f))
+            color = if (isLoading && afterBitmap != null)
+                CyanAccent.copy(alpha = 0.25f)
+            else
+                Color(0xFF4C1D95).copy(alpha = 0.85f),
+            border = BorderStroke(
+                1.dp,
+                if (isLoading && afterBitmap != null) CyanAccent else VioletPrimaryLight.copy(alpha = 0.4f)
+            )
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(6.dp)
+                        .size(7.dp)
                         .clip(CircleShape)
-                        .background(CyanAccent)
+                        .background(
+                            if (isLoading && afterBitmap != null)
+                                CyanAccent.copy(alpha = livePulseAlpha)
+                            else if (afterBitmap != null)
+                                EmeraldGpu
+                            else
+                                CyanAccent
+                        )
                 )
                 Text(
-                    text = if (afterBitmap != null) "UPSCALE ${scaleFactor}X" else "AI ENHANCED",
+                    text = if (isLoading && afterBitmap != null)
+                        "⚡ RENDERING LIVE"
+                    else if (afterBitmap != null)
+                        "UPSCALE ${scaleFactor}X"
+                    else
+                        "AI ENHANCED",
                     color = Color.White,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,

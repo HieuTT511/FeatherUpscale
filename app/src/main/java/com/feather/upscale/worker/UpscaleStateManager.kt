@@ -1,5 +1,6 @@
 package com.feather.upscale.worker
 
+import android.graphics.Bitmap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,6 +38,10 @@ sealed class UpscaleState {
         val totalPages: Int = 1,
         val totalDurationMs: Long = 0L,
         val outputPath: String? = null,
+        val outputFileName: String = "",
+        val outputResolution: String = "",
+        val outputFileSize: String = "",
+        val isNewFile: Boolean = true,
     ) : UpscaleState()
 
     data class Error(
@@ -49,12 +54,15 @@ sealed class UpscaleState {
 
 /**
  * Singleton quản lý trạng thái và luồng điều khiển Pause / Resume / Cancel
- * giữa WorkManager và giao diện Compose UI.
+ * giữa WorkManager và giao diện Compose UI, kèm luồng ảnh preview thời gian thực.
  */
 object UpscaleStateManager {
 
     private val _state = MutableStateFlow<UpscaleState>(UpscaleState.Idle)
     val state: StateFlow<UpscaleState> = _state.asStateFlow()
+
+    private val _runtimePreview = MutableStateFlow<Bitmap?>(null)
+    val runtimePreview: StateFlow<Bitmap?> = _runtimePreview.asStateFlow()
 
     private val _isPaused = MutableStateFlow(false)
     val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
@@ -71,10 +79,15 @@ object UpscaleStateManager {
         } else if (newState is UpscaleState.Cancelled) {
             _isCancelled.value = true
             _isPaused.value = false
+            _runtimePreview.value = null
         } else if (newState is UpscaleState.Idle || newState is UpscaleState.Completed) {
             _isPaused.value = false
             _isCancelled.value = false
         }
+    }
+
+    fun updateRuntimePreview(bitmap: Bitmap?) {
+        _runtimePreview.value = bitmap
     }
 
     fun pause() {
@@ -109,13 +122,14 @@ object UpscaleStateManager {
     fun cancel() {
         _isCancelled.value = true
         _isPaused.value = false
+        _runtimePreview.value = null
         _state.value = UpscaleState.Cancelled
     }
 
     fun reset() {
         _isPaused.value = false
         _isCancelled.value = false
+        _runtimePreview.value = null
         _state.value = UpscaleState.Idle
     }
 }
-
