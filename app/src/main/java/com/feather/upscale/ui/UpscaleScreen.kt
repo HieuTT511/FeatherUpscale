@@ -115,6 +115,8 @@ fun UpscaleScreen(
     val isBatchZip by viewModel.isBatchZip.collectAsState()
     val beforeBitmap by viewModel.beforeBitmap.collectAsState()
     val afterBitmap by viewModel.afterBitmap.collectAsState()
+    val selectedPreset by viewModel.selectedPreset.collectAsState()
+    val isAutoDetected by viewModel.isAutoDetected.collectAsState()
     val scale by viewModel.scale.collectAsState()
     val useFp16 by viewModel.useFp16.collectAsState()
     val forceLowRam by viewModel.forceLowRam.collectAsState()
@@ -122,8 +124,6 @@ fun UpscaleScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scrollState = rememberScrollState()
-
-    var selectedPreset by remember { mutableStateOf("Manga Màu") }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -388,14 +388,35 @@ fun UpscaleScreen(
                 }
             }
 
-            // 3. Preset Gợi ý Thể loại truyện
+            // 3. Preset Gợi ý Thể loại truyện (Tự động nhận diện AI + Cho phép chọn tùy ý)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Preset Tối Ưu",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Preset Tối Ưu",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (isAutoDetected) {
+                        Surface(
+                            shape = CircleShape,
+                            color = CyanAccent.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, CyanAccent.copy(alpha = 0.4f))
+                        ) {
+                            Text(
+                                text = "✨ Tự động nhận diện",
+                                color = CyanAccent,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -403,8 +424,14 @@ fun UpscaleScreen(
                     listOf("Manga Màu", "Manga B&W", "Cover Poster").forEach { preset ->
                         FilterChip(
                             selected = selectedPreset == preset,
-                            onClick = { selectedPreset = preset },
-                            label = { Text(preset, fontSize = 12.sp) },
+                            onClick = { viewModel.setPreset(preset) },
+                            label = {
+                                Text(
+                                    text = preset,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (selectedPreset == preset) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
                             enabled = !isProcessing && !isPaused,
                             shape = RoundedCornerShape(12.dp),
                             colors = FilterChipDefaults.filterChipColors(

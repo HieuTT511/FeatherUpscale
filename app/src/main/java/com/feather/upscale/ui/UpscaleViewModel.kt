@@ -45,6 +45,12 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
     private val _afterBitmap = MutableStateFlow<Bitmap?>(null)
     val afterBitmap: StateFlow<Bitmap?> = _afterBitmap.asStateFlow()
 
+    private val _selectedPreset = MutableStateFlow("Manga Màu")
+    val selectedPreset: StateFlow<String> = _selectedPreset.asStateFlow()
+
+    private val _isAutoDetected = MutableStateFlow(false)
+    val isAutoDetected: StateFlow<Boolean> = _isAutoDetected.asStateFlow()
+
     private val _scale = MutableStateFlow(4)
     val scale: StateFlow<Int> = _scale.asStateFlow()
 
@@ -98,6 +104,11 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
         _forceLowRam.value = enabled
     }
 
+    fun setPreset(preset: String) {
+        _selectedPreset.value = preset
+        _isAutoDetected.value = false
+    }
+
     fun onImageSelected(uri: Uri) {
         _selectedUri.value = uri
         _isBatchZip.value = false
@@ -109,8 +120,14 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
                 val name = queryFileName(uri) ?: "image_${System.currentTimeMillis()}.png"
                 _selectedFileName.value = name
 
-                // Load thumbnail an toàn cho Preview Slider (tránh OOM khi chọn ảnh khổng lồ 1GB)
-                _beforeBitmap.value = decodeSampledPreviewFromUri(uri, 1200)
+                // Load thumbnail an toàn cho Preview Slider
+                val sampled = decodeSampledPreviewFromUri(uri, 1200)
+                _beforeBitmap.value = sampled
+
+                // Tự động phân tích ảnh và nhận diện Preset thông minh
+                val detected = detectPresetFromBitmap(sampled)
+                _selectedPreset.value = detected
+                _isAutoDetected.value = true
             } catch (e: Throwable) {
                 UpscaleStateManager.updateState(UpscaleState.Error("Không thể nạp ảnh xem trước: ${e.message}"))
             }
@@ -127,6 +144,14 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
             val name = queryFileName(uri) ?: "comic_${System.currentTimeMillis()}.cbz"
             _selectedFileName.value = name
             _beforeBitmap.value = createMangaThumbnailPlaceholder()
+
+            val detected = if (name.contains("color", true) || name.contains("manhwa", true) || name.contains("webtoon", true)) {
+                "Manga Màu"
+            } else {
+                "Manga B&W"
+            }
+            _selectedPreset.value = detected
+            _isAutoDetected.value = true
         }
     }
 
@@ -207,6 +232,64 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
     fun reset() {
         UpscaleStateManager.reset()
         _afterBitmap.value = null
+    }
+
+    /**
+     * Tự động nhận diện Preset từ màu sắc, độ bão hòa (saturation) và tỉ lệ kích thước.
+     * Hoạt động an toàn 100%, không bao giờ crash.
+     */
+    internal fun detectPresetFromBitmap(bitmap: Bitmap?): String {
+        if (bitmap == null) return "Manga Màu"
+        try {
+            val safe = if (bitmap.config == Bitmap.Config.HARDWARE) {
+                bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: return "Manga Màu"
+            } else {
+                bitmap
+            }
+            val w = safe.width
+            val h = safe.height
+            val stepX = maxOf(1, w / 32)
+            val stepY = maxOf(1, h / 32)
+
+            var totalSampled = 0
+            var monochromeCount = 0
+            var totalSat = 0f
+
+            for (y in 0 until h step stepY) {
+                for (x in 0 until w step stepX) {
+                    val color = safe.getPixel(x, y)
+                    val r = (color shr 16) and 0xFF
+                    val g = (color shr 8) and 0xFF
+                    val b = color and 0xFF
+
+                    val max = maxOf(r, g, b)
+                    val min = minOf(r, g, b)
+                    val sat = if (max == 0) 0f else (max - min).toFloat() / max
+                    totalSat += sat
+
+                    val diffRG = kotlin.math.abs(r - g)
+                    val diffGB = kotlin.math.abs(g - b)
+                    val diffRB = kotlin.math.abs(r - b)
+                    if (diffRG <= 15 && diffGB <= 15 && diffRB <= 15) {
+                        monochromeCount++
+                    }
+                    totalSampled++
+                }
+            }
+
+            if (totalSampled == 0) return "Manga Màu"
+
+            val monoRatio = monochromeCount.toFloat() / totalSampled
+            val avgSat = totalSat / totalSampled
+
+            return when {
+                monoRatio >= 0.82f || avgSat < 0.12f -> "Manga B&W"
+                avgSat >= 0.35f || (w >= 1000 && h >= 1000 && (w.toFloat() / h in 0.65f..1.5f)) -> "Cover Poster"
+                else -> "Manga Màu"
+            }
+        } catch (_: Throwable) {
+            return "Manga Màu"
+        }
     }
 
     private fun queryFileName(uri: Uri): String? {
