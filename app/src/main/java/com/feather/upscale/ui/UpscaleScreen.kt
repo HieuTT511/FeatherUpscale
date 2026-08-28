@@ -100,6 +100,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.feather.upscale.NcnnUpscaler
 import com.feather.upscale.ui.theme.AmberWarning
 import com.feather.upscale.ui.theme.CyanAccent
 import com.feather.upscale.ui.theme.EmeraldGpu
@@ -129,6 +130,8 @@ fun UpscaleScreen(
     val isAutoDetected by viewModel.isAutoDetected.collectAsState()
     val scale by viewModel.scale.collectAsState()
     val useFp16 by viewModel.useFp16.collectAsState()
+    val mobileModel by viewModel.mobileModel.collectAsState()
+    val quantizationMode by viewModel.quantizationMode.collectAsState()
     val forceLowRam by viewModel.forceLowRam.collectAsState()
     val upscaleState by viewModel.upscaleState.collectAsState()
 
@@ -643,7 +646,7 @@ fun UpscaleScreen(
                 }
             }
 
-            // 4. Bảng Cấu hình Kỹ thuật (Scale, FP16, Low-RAM)
+            // 4. Bảng Cấu hình Kỹ thuật On-Device Mobile AI (Model, Quantization, Scale, Tiling)
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
@@ -660,17 +663,17 @@ fun UpscaleScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Cấu hình AI Upscale",
+                            text = "On-Device Mobile AI Engine",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.ExtraBold
                         )
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = VioletPrimary.copy(alpha = 0.15f)
+                            color = EmeraldGpu.copy(alpha = 0.15f)
                         ) {
                             Text(
-                                text = "Lightning Fast AI",
-                                color = VioletPrimaryLight,
+                                text = "100% Offline",
+                                color = EmeraldGpu,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -678,7 +681,68 @@ fun UpscaleScreen(
                         }
                     }
 
-                    // Segmented Scale Button (2x, 4x, 8x, 10x)
+                    // 1. Lightweight Models (Mô hình rút gọn cho Di động)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Mô hình rút gọn (Mobile Models)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                            Surface(shape = CircleShape, color = VioletPrimary.copy(alpha = 0.15f)) {
+                                Text("NPU/GPU", color = VioletPrimaryLight, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                            }
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val modelOptions: List<Pair<String, String>> = listOf(
+                                NcnnUpscaler.MODEL_ANIME_6B to "Anime 6B (Manga)",
+                                NcnnUpscaler.MODEL_VIDEO_V3 to "AnimeVideoV3 (Siêu nhẹ)",
+                                NcnnUpscaler.MODEL_MOBILE_SR to "MobileSR Fast (NPU)",
+                                NcnnUpscaler.MODEL_PHOTO_X4 to "Photo x4 (Chân dung)"
+                            )
+                            modelOptions.forEach { (modelId, label) ->
+                                FilterChip(
+                                    selected = mobileModel == modelId,
+                                    onClick = { viewModel.setMobileModel(modelId) },
+                                    label = { Text(label, fontSize = 11.sp, fontWeight = if (mobileModel == modelId) FontWeight.Bold else FontWeight.Normal) },
+                                    enabled = !isProcessing && !isPaused,
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = EmeraldGpu.copy(alpha = 0.2f),
+                                        selectedLabelColor = EmeraldGpu
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    // 2. Lượng tử hóa (Model Quantization: INT8 w8a8 vs FP16)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Lượng tử hóa INT8 (w8a8)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                Surface(shape = CircleShape, color = CyanAccent.copy(alpha = 0.15f)) {
+                                    Text("RAM -75%", color = CyanAccent, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                }
+                            }
+                            Text("Nén mô hình 4x và tăng tốc suy luận tối đa", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = quantizationMode == NcnnUpscaler.PRECISION_INT8,
+                            onCheckedChange = { isInt8 ->
+                                viewModel.setQuantizationMode(if (isInt8) NcnnUpscaler.PRECISION_INT8 else NcnnUpscaler.PRECISION_FP16)
+                            },
+                            enabled = !isProcessing && !isPaused,
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = CyanAccent)
+                        )
+                    }
+
+                    // 3. Segmented Scale Button (2x, 4x, 8x, 10x)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -753,7 +817,7 @@ fun UpscaleScreen(
                         }
                     }
 
-                    // FP16 Switch
+                    // 4. OOM Guard Switch (Zero-OOM Tiling / Chunking)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -761,35 +825,12 @@ fun UpscaleScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("Chế độ FP16 Half-Precision", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                                Surface(shape = CircleShape, color = CyanAccent.copy(alpha = 0.15f)) {
-                                    Text("VRAM -50%", color = CyanAccent, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                }
-                            }
-                            Text("Tăng tốc GPU và giảm nhiệt độ máy", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = useFp16,
-                            onCheckedChange = { viewModel.setUseFp16(it) },
-                            enabled = !isProcessing && !isPaused,
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = VioletPrimary)
-                        )
-                    }
-
-                    // OOM Guard Switch
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("OOM Guard 4GB RAM", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                Text("OOM Guard 4GB RAM (Tiling)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                                 Surface(shape = CircleShape, color = EmeraldGpu.copy(alpha = 0.15f)) {
                                     Text("An Toàn", color = EmeraldGpu, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                                 }
                             }
-                            Text("Tile 128px + Direct buffer ghép trực tiếp", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Cắt nhỏ 128px + Ghép liền mạch C^1 Raised-Cosine", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(
                             checked = forceLowRam,

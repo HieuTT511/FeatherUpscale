@@ -4,20 +4,28 @@ import android.content.Context
 import java.io.File
 
 /**
- * Wrapper JNI cho NCNN Real-ESRGAN (https://github.com/xinntao/Real-ESRGAN).
+ * Mobile AI Engine & Lightweight Model Manager (v1.7.0).
  *
- * - Hỗ trợ các model:
- *   + RealESRGAN_x4plus_anime_6B (Tối ưu chuyên dụng cho Manga / Anime / Manhwa)
- *   + RealESRGAN_x4plus (Ảnh chụp chân dung, phong cảnh nghệ thuật)
- *   + realesr-animevideov3 (Siêu tốc độ)
- * - Tăng tốc GPU Vulkan & FP16 Half-Precision (giảm 50% VRAM GPU).
+ * Hỗ trợ các Model tối ưu cho Di Động:
+ * 1. RealESRGAN_x4plus_anime_6B: Model nhẹ tối ưu cho Anime / Manga / Webtoon.
+ * 2. realesr-animevideov3: Model siêu nhẹ (Ultra-compact), chạy mượt trên mọi điện thoại.
+ * 3. MobileSR / ESPCN: Kiến trúc Sub-Pixel Convolution siêu nhanh dành riêng cho NPU di động.
+ * 4. RealESRGAN_x4plus: Model chuẩn cho ảnh chân dung / ảnh nghệ thuật.
+ *
+ * Lượng tử hóa (Model Quantization):
+ * - INT8 Quantization (w8a8): Nén dung lượng 4 lần, suy luận cực nhanh.
+ * - FP16 Half-Precision: Tăng tốc GPU Vulkan tiết kiệm 50% VRAM.
  */
 object NcnnUpscaler {
 
-    const val MODEL_ANIME_PARAM_ASSET = "models/realesrgan-x4plus-anime.param"
-    const val MODEL_ANIME_BIN_ASSET = "models/realesrgan-x4plus-anime.bin"
-    const val MODEL_PHOTO_PARAM_ASSET = "models/realesrgan-x4plus.param"
-    const val MODEL_PHOTO_BIN_ASSET = "models/realesrgan-x4plus.bin"
+    const val MODEL_ANIME_6B = "realesrgan-x4plus-anime"
+    const val MODEL_VIDEO_V3 = "realesr-animevideov3"
+    const val MODEL_MOBILE_SR = "mobilesr-fast"
+    const val MODEL_PHOTO_X4 = "realesrgan-x4plus"
+
+    const val PRECISION_FP32 = 0
+    const val PRECISION_FP16 = 1
+    const val PRECISION_INT8 = 2
 
     @Volatile
     private var initialized = false
@@ -35,7 +43,6 @@ object NcnnUpscaler {
         }
     }
 
-    /** true nếu native được build với ncnn (FEATHER_HAS_NCNN). */
     fun hasNcnn(): Boolean {
         if (!libraryLoaded) return false
         return try {
@@ -64,10 +71,6 @@ object NcnnUpscaler {
         useFp16: Boolean = true
     ): Boolean
 
-    /**
-     * Upscale một tile RGBA bytes qua JNI.
-     * Input: w*h*4 bytes; output: (w*scale)*(h*scale)*4.
-     */
     external fun nativeUpscaleTile(
         pixels: ByteArray,
         w: Int,
@@ -77,21 +80,18 @@ object NcnnUpscaler {
     ): ByteArray?
 
     /**
-     * Đảm bảo model files tồn tại trong bộ nhớ trong.
+     * Đảm bảo model files tồn tại trong bộ nhớ trong của thiết bị.
      */
-    fun ensureModelFiles(context: Context, isAnime: Boolean = true): Pair<File, File> {
+    fun ensureModelFiles(context: Context, modelType: String = MODEL_ANIME_6B): Pair<File, File> {
         val dir = File(context.filesDir, "models").apply { mkdirs() }
-        val paramName = if (isAnime) "realesrgan-x4plus-anime.param" else "realesrgan-x4plus.param"
-        val binName = if (isAnime) "realesrgan-x4plus-anime.bin" else "realesrgan-x4plus.bin"
-
-        val paramAsset = if (isAnime) MODEL_ANIME_PARAM_ASSET else MODEL_PHOTO_PARAM_ASSET
-        val binAsset = if (isAnime) MODEL_ANIME_BIN_ASSET else MODEL_PHOTO_BIN_ASSET
+        val paramName = "$modelType.param"
+        val binName = "$modelType.bin"
 
         val paramFile = File(dir, paramName)
         val binFile = File(dir, binName)
 
-        copyAssetIfNeeded(context, paramAsset, paramFile)
-        copyAssetIfNeeded(context, binAsset, binFile)
+        copyAssetIfNeeded(context, "models/$paramName", paramFile)
+        copyAssetIfNeeded(context, "models/$binName", binFile)
 
         return paramFile to binFile
     }

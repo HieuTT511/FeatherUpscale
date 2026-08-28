@@ -27,6 +27,7 @@ class TileProcessor(
     private val tileUpscaler: TileUpscaler = NcnnTileUpscalerAdapter(),
     forcedLowRam: Boolean? = null,
     val useFp16: Boolean = true,
+    val modelName: String = NcnnUpscaler.MODEL_ANIME_6B,
 ) {
     interface TileUpscaler {
         /** bytes RGBA của tile đầu vào -> RGBA đã upscale; null nếu lỗi. */
@@ -37,6 +38,17 @@ class TileProcessor(
     class NcnnTileUpscalerAdapter : TileUpscaler {
         override fun upscale(pixels: ByteArray, w: Int, h: Int, scale: Int, useFp16: Boolean): ByteArray? =
             NcnnUpscaler.upscaleTile(pixels, w, h, scale, useFp16)
+    }
+
+    init {
+        if (context != null) {
+            try {
+                val (paramFile, binFile) = NcnnUpscaler.ensureModelFiles(context, modelName)
+                if (paramFile.exists() && binFile.exists()) {
+                    NcnnUpscaler.nativeInit(paramFile.absolutePath, binFile.absolutePath, 0, useFp16)
+                }
+            } catch (_: Throwable) {}
+        }
     }
 
     val isLowRam: Boolean = forcedLowRam ?: isLowRamDevice()

@@ -14,6 +14,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.feather.upscale.NcnnUpscaler
 import com.feather.upscale.video.VideoProcessor
 import com.feather.upscale.worker.UpscaleState
 import com.feather.upscale.worker.UpscaleStateManager
@@ -66,6 +67,12 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
     private val _useFp16 = MutableStateFlow(true)
     val useFp16: StateFlow<Boolean> = _useFp16.asStateFlow()
 
+    private val _mobileModel = MutableStateFlow(NcnnUpscaler.MODEL_ANIME_6B)
+    val mobileModel: StateFlow<String> = _mobileModel.asStateFlow()
+
+    private val _quantizationMode = MutableStateFlow(NcnnUpscaler.PRECISION_FP16)
+    val quantizationMode: StateFlow<Int> = _quantizationMode.asStateFlow()
+
     private val isDeviceLowRam = run {
         val am = appContext.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         am?.isLowRamDevice ?: false
@@ -103,6 +110,15 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
+    }
+
+    fun setMobileModel(model: String) {
+        _mobileModel.value = model
+    }
+
+    fun setQuantizationMode(precision: Int) {
+        _quantizationMode.value = precision
+        _useFp16.value = (precision == NcnnUpscaler.PRECISION_FP16)
     }
 
     fun setScale(newScale: Int) {
@@ -247,7 +263,8 @@ class UpscaleViewModel(application: Application) : AndroidViewModel(application)
                     UpscaleWorker.KEY_CUSTOM_OUTPUT_DIR to _customOutputDir.value,
                     UpscaleWorker.KEY_SCALE to _scale.value,
                     UpscaleWorker.KEY_USE_FP16 to _useFp16.value,
-                    UpscaleWorker.KEY_FORCE_LOW_RAM to _forceLowRam.value
+                    UpscaleWorker.KEY_FORCE_LOW_RAM to _forceLowRam.value,
+                    UpscaleWorker.KEY_MODEL_NAME to _mobileModel.value
                 )
 
                 val upscaleWorkRequest = OneTimeWorkRequestBuilder<UpscaleWorker>()

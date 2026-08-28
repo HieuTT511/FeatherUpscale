@@ -30,6 +30,7 @@ class UpscaleWorker(
         const val KEY_SCALE = "scale"
         const val KEY_USE_FP16 = "use_fp16"
         const val KEY_FORCE_LOW_RAM = "force_low_ram"
+        const val KEY_MODEL_NAME = "model_name"
 
         const val MODE_SINGLE_IMAGE = "single_image"
         const val MODE_BATCH_ARCHIVE = "batch_archive"
@@ -48,6 +49,7 @@ class UpscaleWorker(
         val scale = inputData.getInt(KEY_SCALE, 4)
         val useFp16 = inputData.getBoolean(KEY_USE_FP16, true)
         val forceLowRam = inputData.getBoolean(KEY_FORCE_LOW_RAM, false)
+        val modelName = inputData.getString(KEY_MODEL_NAME) ?: "realesrgan-x4plus-anime"
 
         val startTime = System.currentTimeMillis()
 
@@ -71,14 +73,15 @@ class UpscaleWorker(
                 context = applicationContext,
                 scale = scale,
                 forcedLowRam = forceLowRam,
-                useFp16 = useFp16
+                useFp16 = useFp16,
+                modelName = modelName
             )
 
             val baseName = if (originalName.contains('.')) originalName.substringBeforeLast('.') else originalName
 
             if (mode == MODE_VIDEO || VideoProcessor.isVideoFile(originalName)) {
                 // ==========================================
-                // 1. VIDEO SUPER-RESOLUTION MODE
+                // 1. ON-DEVICE VIDEO SUPER-RESOLUTION MODE
                 // ==========================================
                 val inputFile = File(inputPath)
                 val tempOutputFile = File(applicationContext.cacheDir, "temp_video_${System.currentTimeMillis()}.mp4")
@@ -178,10 +181,10 @@ class UpscaleWorker(
                 // ==========================================
                 val inputFile = File(inputPath)
                 val isMobi = mode == MODE_MOBI_ARCHIVE ||
-                        inputFile.extension.equals("mobi", true) ||
-                        inputFile.extension.equals("prc", true)
+                        originalName.endsWith(".mobi", true) ||
+                        originalName.endsWith(".prc", true)
 
-                val tempOutputFile = File(applicationContext.cacheDir, "temp_batch_${System.currentTimeMillis()}.cbz")
+                val tempOutputFile = File(applicationContext.cacheDir, "temp_upscaled_${System.currentTimeMillis()}.cbz")
 
                 if (isMobi) {
                     val mobiProcessor = MobiProcessor(
@@ -197,7 +200,7 @@ class UpscaleWorker(
                             totalTiles = 1,
                             currentTileSize = tileProcessor.tileSize,
                             isLowRam = tileProcessor.isLowRam,
-                            statusMessage = "Đang phân tích cấu trúc truyện MOBI / PRC..."
+                            statusMessage = "Đang giải mã sách truyện MOBI / PRC..."
                         )
                     )
 
@@ -220,7 +223,7 @@ class UpscaleWorker(
                                     currentTileSize = progress.currentTileSize,
                                     isLowRam = tileProcessor.isLowRam,
                                     progressFraction = percent,
-                                    statusMessage = "Trang ${progress.currentPage}/${progress.totalPages} (MOBI)"
+                                    statusMessage = "Trang ${progress.currentPage}/${progress.totalPages} (${progress.pageName})"
                                 )
                             )
 
@@ -340,7 +343,7 @@ class UpscaleWorker(
 
             } else {
                 // ==========================================
-                // 3. SINGLE IMAGE MODE
+                // 3. ON-DEVICE SINGLE IMAGE MODE
                 // ==========================================
                 val inputFile = File(inputPath)
                 val options = BitmapFactory.Options().apply {
@@ -357,7 +360,7 @@ class UpscaleWorker(
                         totalTiles = 1,
                         currentTileSize = tileProcessor.tileSize,
                         isLowRam = tileProcessor.isLowRam,
-                        statusMessage = "Bắt đầu upscale AI ${scale}X..."
+                        statusMessage = "Bắt đầu On-Device AI (${scale}X)..."
                     )
                 )
 
@@ -439,34 +442,19 @@ class UpscaleWorker(
 
             Result.success()
 
-        } catch (e: OutOfMemoryError) {
-            UpscaleStateManager.updateState(
-                UpscaleState.Error(
-                    message = "Tràn bộ nhớ RAM khi upscale $scale X. Vui lòng bật chế độ 'OOM Guard' để bảo vệ máy.",
-                    isOom = true
-                )
-            )
-            Result.failure()
         } catch (e: Throwable) {
-            val isCancelled = UpscaleStateManager.isCancelled.value
-            if (!isCancelled) {
-                val isOom = e.message?.contains("Out of memory", true) == true
-                UpscaleStateManager.updateState(
-                    UpscaleState.Error(
-                        message = e.localizedMessage ?: e.message ?: "Lỗi không xác định khi upscale",
-                        isOom = isOom
-                    )
-                )
-            }
+            val errorMsg = e.message ?: "Lỗi xử lý siêu phân giải"
+            UpscaleStateManager.updateState(UpscaleState.Error(errorMsg))
+            notificationManager.dismiss()
             Result.failure()
         }
     }
 
-    private fun formatFileSize(sizeInBytes: Long): String {
-        if (sizeInBytes <= 0) return "0 B"
+    private fun formatFileSize(bytes: Long): String {
+        if (bytes <= 0) return "0 B"
         val units = arrayOf("B", "KB", "MB", "GB")
-        val digitGroups = (Math.log10(sizeInBytes.toDouble()) / Math.log10(1024.0)).toInt()
-        val format = DecimalFormat("#,##0.#")
-        return "${format.format(sizeInBytes / Math.pow(1024.0, digitGroups.toDouble()))} ${units[digitGroups]}"
+        val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
+        val formatter = DecimalFormat("#,##0.#")
+        return "${formatter.format(bytes / Math.pow(1024.0, digitGroups.toDouble()))} ${units[digitGroups]}"
     }
 }
